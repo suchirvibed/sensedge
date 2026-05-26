@@ -78,9 +78,11 @@ export function DesignerApp({ designId, userName }: Props) {
   }, [designName, specs, canvas.ready, persist]);
 
   function handlePlaceOrder() {
-    // Placeholder until the checkout flow exists.
+    // Checkout isn't built yet. The design is already autosaved locally,
+    // so we route the user to their dashboard where they'll be able to
+    // resume / place orders once /checkout exists.
     alert(
-      "Checkout isn't wired up yet — your design is autosaved locally. We'll build the checkout next."
+      "Checkout is coming next — your design is autosaved locally. You'll be taken to your dashboard."
     );
     router.push("/dashboard");
   }

@@ -6,11 +6,12 @@ import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
+import { safeReturnUrl } from "@/lib/safe-redirect";
 
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("from") || "/dashboard";
+  const callbackUrl = safeReturnUrl(params.get("from"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

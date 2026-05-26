@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
+import { safeReturnUrl } from "@/lib/safe-redirect";
 
 interface Props {
   /** "Continue with Google" / "Sign up with Google" etc. */
@@ -11,7 +12,7 @@ interface Props {
 
 export function GoogleSignInButton({ label = "Continue with Google" }: Props) {
   const params = useSearchParams();
-  const callbackUrl = params.get("from") || "/dashboard";
+  const callbackUrl = safeReturnUrl(params.get("from"));
   const [busy, setBusy] = useState(false);
 
   // Only render when explicitly enabled — keeps the button hidden until
