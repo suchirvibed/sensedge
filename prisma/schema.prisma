@@ -1,0 +1,230 @@
+// PrintCard database schema
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USERS ───────────────────────────────────────────────
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role      @default(CUSTOMER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  orders    Order[]
+  designs   Design[]
+  addresses Address[]
+}
+
+enum Role {
+  CUSTOMER
+  GRAPHICS
+  PRINTER
+  ADMIN
+}
+
+// ─── DESIGNS ─────────────────────────────────────────────
+model Design {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id])
+  name       String       @default("Untitled design")
+  canvasJson Json
+  previewUrl String?
+  status     DesignStatus @default(DRAFT)
+  notes      String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  orders     Order[]
+}
+
+enum DesignStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  REVISION_NEEDED
+  APPROVED
+  ARCHIVED
+}
+
+// ─── ORDERS ──────────────────────────────────────────────
+model Order {
+  id            String        @id @default(cuid())
+  orderNumber   String        @unique
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  designId      String
+  design        Design        @relation(fields: [designId], references: [id])
+  addressId     String
+  address       Address       @relation(fields: [addressId], references: [id])
+  quantity      Int
+  material      Material      @default(PVC)
+  finish        Finish        @default(MATTE)
+  chipType      ChipType      @default(NONE)
+  printSide     PrintSide     @default(SINGLE)
+  printerType   PrinterType   @default(THERMAL)
+  basePrice     Float
+  addonsPrice   Float
+  subtotal      Float
+  shippingPrice Float
+  totalPrice    Float
+  status        OrderStatus   @default(CONFIRMED)
+  paymentId     String?
+  paymentMethod String?
+  paymentStatus PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  statusLogs    OrderStatusLog[]
+  printJob      PrintJob?
+  payment       Payment?
+}
+
+enum Material {
+  PVC
+  PAPER
+  COMPOSITE
+}
+
+enum Finish {
+  MATTE
+  GLOSSY
+  METALLIC
+}
+
+enum ChipType {
+  NONE
+  RFID
+  NFC
+  LED
+}
+
+enum PrintSide {
+  SINGLE
+  DOUBLE
+}
+
+enum PrinterType {
+  THERMAL
+  INKJET
+}
+
+enum OrderStatus {
+  CONFIRMED
+  IN_REVIEW
+  REVISION_NEEDED
+  APPROVED
+  PRINTING
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+// ─── ORDER STATUS LOG ────────────────────────────────────
+model OrderStatusLog {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  changedBy String
+  notes     String?
+  createdAt DateTime    @default(now())
+}
+
+// ─── PRINT JOBS ──────────────────────────────────────────
+model PrintJob {
+  id           String         @id @default(cuid())
+  orderId      String         @unique
+  order        Order          @relation(fields: [orderId], references: [id])
+  assignedTo   String?
+  printFileUrl String?
+  status       PrintJobStatus @default(QUEUED)
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+enum PrintJobStatus {
+  QUEUED
+  PRINTING
+  COMPLETED
+  ISSUE
+}
+
+// ─── TEMPLATES ───────────────────────────────────────────
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  canvasJson  Json
+  previewUrl  String?
+  isPublic    Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── PRODUCTS / PRICING ──────────────────────────────────
+model Product {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  basePricePvc    Float
+  basePricePaper  Float
+  basePriceComposite Float
+  priceGlossy     Float
+  priceMetallic   Float
+  priceRfid       Float
+  priceNfc        Float
+  priceLed        Float
+  priceDoubleSide Float
+  minQuantity     Int      @default(25)
+  isActive        Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── ADDRESSES ───────────────────────────────────────────
+model Address {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  name      String
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  phone     String
+  isDefault Boolean @default(false)
+  orders    Order[]
+}
+
+// ─── PAYMENTS ────────────────────────────────────────────
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  order           Order         @relation(fields: [orderId], references: [id])
+  razorpayOrderId String?
+  razorpayPayId   String?
+  amount          Float
+  currency        String        @default("INR")
+  status          PaymentStatus @default(PENDING)
+  method          String?
+  createdAt       DateTime      @default(now())
+}

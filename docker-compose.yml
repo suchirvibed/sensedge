@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: printcard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: printcard
+      POSTGRES_PASSWORD: printcard_dev
+      POSTGRES_DB: printcard
+    ports:
+      - "5432:5432"
+    volumes:
+      - printcard_pgdata:/var/lib/postgresql/data
+
+volumes:
+  printcard_pgdata:

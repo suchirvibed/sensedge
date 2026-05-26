@@ -2,22 +2,101 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --orange: #E85D04;
+  --orange-dark: #c94e00;
+  --orange-tint: #fff3ec;
+
+  --bg-page: #f0efe8;
+  --bg-white: #ffffff;
+  --bg-dark: #17191a;
+  --bg-darker: #111115;
+
+  --text-primary: #17191a;
+  --text-body: #444444;
+  --text-muted: #666666;
+  --text-hint: #999999;
+
+  --border: #e8e8ec;
+  --border-dark: #2a2a2e;
+
+  --canvas-bg: #0a0a0f;
+
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  --section-pad: 100px;
+  --container: 1200px;
+  --container-px: 40px;
+  --nav-height: 88px;
+  --divider-w: 60px;
+  --divider-h: 3px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .display {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 8vw, 96px);
+    font-weight: 800;
+    line-height: 0.92;
+    letter-spacing: -0.03em;
+  }
+  .h1 {
+    font-family: var(--font-display);
+    font-size: clamp(36px, 5vw, 64px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+  }
+  .h2 {
+    font-family: var(--font-display);
+    font-size: clamp(26px, 3.5vw, 44px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+  .h3 {
+    font-family: var(--font-display);
+    font-size: clamp(18px, 2vw, 24px);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .eyebrow {
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .container-px {
+    padding-left: var(--container-px);
+    padding-right: var(--container-px);
+  }
+  .section-pad {
+    padding-top: var(--section-pad);
+    padding-bottom: var(--section-pad);
+  }
+  .orange-divider {
+    width: var(--divider-w);
+    height: var(--divider-h);
+    background: var(--orange);
+    border: 0;
+    margin: 18px 0 0 0;
+  }
 }
 
 @layer utilities {
