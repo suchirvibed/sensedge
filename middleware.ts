@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth.config";
+
+// Edge-safe: middleware uses the bare auth config (no Prisma/bcrypt).
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
-  const role = req.auth?.user?.role;
+  const token = req.auth?.user as { role?: string } | undefined;
+  const role = token?.role;
   const path = req.nextUrl.pathname;
   const isAuthed = !!req.auth;
 
