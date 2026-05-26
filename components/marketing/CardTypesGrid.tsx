@@ -8,6 +8,7 @@ import {
 } from "@tabler/icons-react";
 import { SectionHeading } from "@/components/shared/SectionHeading";
 import { ServiceCard } from "@/components/shared/ServiceCard";
+import { Stagger, StaggerItem } from "@/components/shared/Reveal";
 
 const CARDS = [
   {
@@ -59,11 +60,13 @@ export function CardTypesGrid() {
     <section className="bg-bg-page section-pad">
       <div className="container-px mx-auto max-w-container">
         <SectionHeading eyebrow="WHAT WE OFFER" title="Every card type, covered" />
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {CARDS.map((c) => (
-            <ServiceCard key={c.title} {...c} />
+            <StaggerItem key={c.title}>
+              <ServiceCard {...c} />
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </div>
     </section>
   );

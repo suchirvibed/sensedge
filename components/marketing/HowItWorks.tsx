@@ -1,5 +1,6 @@
 import { IconTemplate, IconBrush, IconTruckDelivery } from "@tabler/icons-react";
 import { SectionHeading } from "@/components/shared/SectionHeading";
+import { Stagger, StaggerItem } from "@/components/shared/Reveal";
 
 const STEPS = [
   {
@@ -27,23 +28,22 @@ export function HowItWorks() {
     <section className="bg-bg-page section-pad">
       <div className="container-px mx-auto max-w-container">
         <SectionHeading eyebrow="HOW IT WORKS" title="From idea to in-hand, in 3 steps" />
-        <div className="grid gap-8 md:grid-cols-3">
+        <Stagger className="grid gap-8 md:grid-cols-3" gap={0.12}>
           {STEPS.map((s) => (
-            <div
-              key={s.n}
-              className="relative rounded-card bg-white p-8 shadow-card transition hover:-translate-y-1 hover:shadow-hover"
-            >
-              <div className="flex items-center gap-4">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange text-sm font-bold text-white">
-                  {s.n}
-                </span>
-                <span className="text-orange">{s.icon}</span>
+            <StaggerItem key={s.n}>
+              <div className="group relative h-full rounded-card bg-white p-8 shadow-card transition duration-500 hover:-translate-y-1 hover:shadow-hover">
+                <div className="flex items-center gap-4">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange text-sm font-bold text-white transition group-hover:scale-110">
+                    {s.n}
+                  </span>
+                  <span className="text-orange transition group-hover:scale-110">{s.icon}</span>
+                </div>
+                <h3 className="h3 mt-6 text-text-primary">{s.title}</h3>
+                <p className="mt-2 text-sm text-text-body">{s.body}</p>
               </div>
-              <h3 className="h3 mt-6 text-text-primary">{s.title}</h3>
-              <p className="mt-2 text-sm text-text-body">{s.body}</p>
-            </div>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </div>
     </section>
   );

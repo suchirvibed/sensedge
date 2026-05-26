@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { IconArrowLeft, IconArrowRight, IconQuote } from "@tabler/icons-react";
 import { SectionHeading } from "@/components/shared/SectionHeading";
 
@@ -40,17 +41,27 @@ export function Testimonials() {
 
         <div className="grid items-center gap-12 lg:grid-cols-[1.4fr_1fr]">
           {/* Quote */}
-          <div>
+          <div className="min-h-[260px]">
             <IconQuote size={42} className="text-orange" />
-            <blockquote className="mt-6 font-display text-2xl font-semibold leading-snug text-text-primary md:text-3xl">
-              &ldquo;{active.quote}&rdquo;
-            </blockquote>
-            <div className="mt-7">
-              <div className="font-semibold text-text-primary">{active.name}</div>
-              <div className="text-sm text-text-muted">
-                {active.role} · {active.company}
-              </div>
-            </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -18 }}
+                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <blockquote className="mt-6 font-display text-2xl font-semibold leading-snug text-text-primary md:text-3xl">
+                  &ldquo;{active.quote}&rdquo;
+                </blockquote>
+                <div className="mt-7">
+                  <div className="font-semibold text-text-primary">{active.name}</div>
+                  <div className="text-sm text-text-muted">
+                    {active.role} · {active.company}
+                  </div>
+                </div>
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* Controls */}

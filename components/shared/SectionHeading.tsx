@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { Reveal } from "@/components/shared/Reveal";
 
 interface Props {
   eyebrow: string;
@@ -9,7 +10,7 @@ interface Props {
 
 export function SectionHeading({ eyebrow, title, align = "left", inverse = false }: Props) {
   return (
-    <div className={cn(align === "center" && "text-center", "mb-12")}>
+    <Reveal className={cn(align === "center" && "text-center", "mb-12")}>
       <span
         className={cn(
           "eyebrow",
@@ -22,6 +23,6 @@ export function SectionHeading({ eyebrow, title, align = "left", inverse = false
       </span>
       <h2 className={cn("h2 mt-3", inverse ? "text-white" : "text-text-primary")}>{title}</h2>
       <hr className={cn("orange-divider", align === "center" && "mx-auto")} />
-    </div>
+    </Reveal>
   );
 }
