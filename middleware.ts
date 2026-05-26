@@ -33,8 +33,17 @@ export default auth((req) => {
   if (path.startsWith("/dashboard") && !isAuthed) {
     return NextResponse.redirect(loginUrl);
   }
+  if (path.startsWith("/designer") && !isAuthed) {
+    return NextResponse.redirect(loginUrl);
+  }
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/graphics/:path*", "/printer/:path*", "/admin/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/graphics/:path*",
+    "/printer/:path*",
+    "/admin/:path*",
+    "/designer/:path*",
+  ],
 };
