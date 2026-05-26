@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
+import { auth } from "@/auth";
+import { UserMenu } from "@/components/auth/UserMenu";
 
 const LINKS = [
   { href: "/", label: "Home" },
@@ -8,7 +10,10 @@ const LINKS = [
   { href: "/about", label: "About" },
 ];
 
-export function Navbar() {
+export async function Navbar() {
+  const session = await auth();
+  const user = session?.user;
+
   return (
     <header className="sticky top-0 z-50 h-nav bg-white shadow-[0_1px_0_var(--border)]">
       <div className="container-px mx-auto flex h-full max-w-container items-center justify-between">
@@ -38,12 +43,25 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <LinkButton href="/login" variant="ghost" className="hidden sm:inline-flex">
-            Login
-          </LinkButton>
+          {!user && (
+            <LinkButton href="/login" variant="ghost" className="hidden sm:inline-flex">
+              Login
+            </LinkButton>
+          )}
+
           <LinkButton href="/designer/new" variant="primary" showArrow>
             Start designing
           </LinkButton>
+
+          {user && (
+            <UserMenu
+              user={{
+                name: user.name ?? user.email ?? "Account",
+                email: user.email ?? "",
+                role: user.role,
+              }}
+            />
+          )}
         </div>
       </div>
     </header>

@@ -1,10 +1,15 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { RegisterForm } from "./RegisterForm";
 
 export const metadata = { title: "Create account — PrintCard" };
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  const session = await auth();
+  if (session?.user) redirect("/dashboard");
+
   return (
     <div className="w-full max-w-md rounded-card bg-white p-10 shadow-card">
       <span className="eyebrow text-text-muted">
