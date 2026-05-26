@@ -3,66 +3,64 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { LinkButton } from "@/components/ui/Button";
+import {
+  CardsCollage,
+  LanyardsCollage,
+  NfcCollage,
+} from "@/components/marketing/HeroCollages";
 
 const eased = [0.22, 1, 0.36, 1] as const;
 
-const SLIDES = [
+type SlideKind = "cards" | "lanyards" | "nfc";
+
+interface Slide {
+  kind: SlideKind;
+  badge: string;
+  title: React.ReactNode;
+  description: string;
+  primaryBtn: { label: string; href: string };
+  secondaryBtn: { label: string; href: string };
+}
+
+const SLIDES: Slide[] = [
   {
-    badge: "Corporate IDs",
+    kind: "cards",
+    badge: "ID & business cards",
     title: (
       <>
-        Professional <span className="text-orange">ID Cards</span> for your whole team.
+        Start designing <span className="text-orange">cards</span> in minutes.
       </>
     ),
     description:
-      "High-quality plastic cards with premium finishes. Perfect for offices, co-working spaces, and corporate events across India.",
-    primaryBtn: "Start designing",
-    secondaryBtn: "View pricing",
-    mockup: {
-      type: "employee",
-      name: "Aarav Sharma",
-      dept: "Product · Bengaluru",
-      id: "PCO-000142",
-      color: "from-amber-200 to-amber-400",
-    },
+      "Employee IDs, business cards, memberships and visitor passes — printed on PVC and shipped across India in 3–5 days.",
+    primaryBtn: { label: "Start designing", href: "/designer/new" },
+    secondaryBtn: { label: "Browse templates", href: "/templates" },
   },
   {
-    badge: "NFC & RFID",
+    kind: "lanyards",
+    badge: "Lanyards",
     title: (
       <>
-        Next-gen <span className="text-orange">Smart Cards</span> for seamless access.
+        Branded <span className="text-orange">lanyards</span> for every event.
       </>
     ),
     description:
-      "Programmed NFC and RFID cards for secure entry, digital business cards, or event check-ins. Designed in minutes.",
-    primaryBtn: "Create smart card",
-    secondaryBtn: "How it works",
-    mockup: {
-      type: "access",
-      name: "Tech Summit 2026",
-      dept: "All Access Pass",
-      id: "NFC-772910",
-      color: "from-blue-400 to-indigo-500",
-    },
+      "Custom-printed lanyards in any colour with your logo. Pair them with badges, IDs or RFID cards — ready for staff, students or attendees.",
+    primaryBtn: { label: "Customise lanyards", href: "/designer/new?type=lanyard" },
+    secondaryBtn: { label: "See colour options", href: "/pricing#lanyards" },
   },
   {
-    badge: "Institutions",
+    kind: "nfc",
+    badge: "NFC · Metal · Wooden · LED",
     title: (
       <>
-        Durable <span className="text-orange">Student IDs</span> for schools & colleges.
+        Premium <span className="text-orange">NFC cards</span> in metal, wood &amp; LED.
       </>
     ),
     description:
-      "Bulk ordering made simple. Durable, scratch-resistant cards that withstand daily use by students and faculty.",
-    primaryBtn: "Bulk inquiry",
-    secondaryBtn: "See samples",
-    mockup: {
-      type: "student",
-      name: "Ishani Gupta",
-      dept: "Class XII-B · Delhi",
-      id: "STU-992011",
-      color: "from-emerald-400 to-teal-500",
-    },
+      "Make a real impression — programmable NFC chips inside metal, wooden and light-up cards. Perfect for executives, networking and exclusive memberships.",
+    primaryBtn: { label: "Explore premium", href: "/designer/new?type=nfc" },
+    secondaryBtn: { label: "How NFC works", href: "/about#nfc" },
   },
 ];
 
@@ -76,16 +74,18 @@ export function Hero() {
     setCurrent((prev) => (prev + newDirection + SLIDES.length) % SLIDES.length);
   }, []);
 
+  // Auto-rotate; pause on tab hidden
   useEffect(() => {
-    const timer = setInterval(() => paginate(1), 6000);
+    if (prefersReduced) return;
+    const timer = setInterval(() => paginate(1), 7000);
     return () => clearInterval(timer);
-  }, [paginate]);
+  }, [paginate, prefersReduced]);
 
   const slide = SLIDES[current];
 
   return (
-    <section className="relative overflow-hidden bg-bg-page min-h-[700px] flex items-center">
-      {/* Faint geometric grid for subtle texture */}
+    <section className="relative flex min-h-[700px] items-center overflow-hidden bg-bg-page">
+      {/* Faint geometric grid */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.025]"
         style={{
@@ -95,10 +95,10 @@ export function Hero() {
         }}
       />
 
-      <div className="container-px relative mx-auto max-w-container py-24 md:py-32">
+      <div className="container-px relative mx-auto w-full max-w-container py-24 md:py-32">
         <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
           {/* Left — content */}
-          <div className="relative min-h-[400px]">
+          <div className="relative min-h-[440px]">
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={current}
@@ -116,20 +116,18 @@ export function Hero() {
                   Ready to ship in 3–5 days
                 </div>
 
-                <h1 className="display mt-6 text-text-primary">
-                  {slide.title}
-                </h1>
+                <h1 className="display mt-6 text-text-primary">{slide.title}</h1>
 
                 <p className="mt-6 max-w-xl text-base leading-relaxed text-text-body md:text-lg">
                   {slide.description}
                 </p>
 
                 <div className="mt-9 flex flex-wrap items-center gap-3">
-                  <LinkButton href="/designer/new" variant="primary" size="lg" showArrow>
-                    {slide.primaryBtn}
+                  <LinkButton href={slide.primaryBtn.href} variant="primary" size="lg" showArrow>
+                    {slide.primaryBtn.label}
                   </LinkButton>
-                  <LinkButton href="/templates" variant="outline" size="lg">
-                    {slide.secondaryBtn}
+                  <LinkButton href={slide.secondaryBtn.href} variant="outline" size="lg">
+                    {slide.secondaryBtn.label}
                   </LinkButton>
                 </div>
 
@@ -141,94 +139,46 @@ export function Hero() {
                     <Dot /> Free shipping above ₹500
                   </span>
                   <span className="flex items-center gap-2">
-                    <Dot /> 25–10,000 cards
+                    <Dot /> 25–10,000 units
                   </span>
                 </div>
               </motion.div>
             </AnimatePresence>
           </div>
 
-          {/* Right — card mockup */}
-          <div className="relative mx-auto w-full max-w-md h-[300px] flex items-center justify-center">
+          {/* Right — collage */}
+          <div className="relative mx-auto flex aspect-square w-full max-w-md items-center justify-center">
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={current}
                 custom={direction}
-                initial={{ opacity: 0, scale: 0.9, rotate: direction > 0 ? 5 : -5 }}
+                initial={{ opacity: 0, scale: 0.92, rotate: direction > 0 ? 4 : -4 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                exit={{ opacity: 0, scale: 0.9, rotate: direction > 0 ? -5 : 5 }}
-                transition={{ duration: 0.6, ease: eased }}
-                className="relative w-full"
+                exit={{ opacity: 0, scale: 0.92, rotate: direction > 0 ? -4 : 4 }}
+                transition={{ duration: 0.55, ease: eased }}
+                className="relative h-full w-full"
               >
-                {/* Back layer */}
-                <div className="absolute inset-0 translate-x-3 translate-y-3 rotate-[4deg] rounded-card bg-bg-dark/95 ring-card" />
-
-                {/* Front card */}
-                <motion.div
-                  animate={
-                    prefersReduced
-                      ? undefined
-                      : { rotate: [-1.2, 0.8, -1.2], y: [0, -4, 0] }
-                  }
-                  transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-                  className="relative aspect-[1.6/1] w-full rounded-card bg-white p-6 shadow-hover ring-card"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">
-                        {slide.mockup.type}
-                      </div>
-                      <div className="mt-1.5 font-display text-[26px] font-bold leading-tight tracking-tight text-text-primary">
-                        {slide.mockup.name}
-                      </div>
-                      <div className="mt-0.5 text-xs text-text-muted">
-                        {slide.mockup.dept}
-                      </div>
-                    </div>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-text-primary">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4">
-                        <rect x="3" y="6" width="18" height="13" rx="2" />
-                        <path d="M7 16h4" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex items-end gap-4">
-                    <div className="h-16 w-16 rounded-md bg-bg-subtle" />
-                    <div className="flex-1 space-y-1.5 pb-1">
-                      <div className="h-1.5 w-3/4 rounded-full bg-bg-subtle" />
-                      <div className="h-1.5 w-1/2 rounded-full bg-bg-subtle" />
-                      <div className="h-1.5 w-2/3 rounded-full bg-bg-subtle" />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between">
-                    <div className="font-mono text-[10px] tracking-widest text-text-muted">
-                      {slide.mockup.id}
-                    </div>
-                    <div className={`h-5 w-12 rounded-sm bg-gradient-to-tr ${slide.mockup.color}`} />
-                  </div>
-
-                  <div className="absolute bottom-0 left-0 h-1 w-12 rounded-bl-card bg-orange" />
-                </motion.div>
+                {slide.kind === "cards" && <CardsCollage />}
+                {slide.kind === "lanyards" && <LanyardsCollage />}
+                {slide.kind === "nfc" && <NfcCollage />}
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
 
-        {/* Navigation Dots */}
-        <div className="mt-12 flex justify-center gap-2.5">
-          {SLIDES.map((_, index) => (
+        {/* Carousel indicators */}
+        <div className="mt-10 flex items-center justify-center gap-2 lg:justify-start">
+          {SLIDES.map((s, i) => (
             <button
-              key={index}
+              key={s.kind}
               onClick={() => {
-                setDirection(index > current ? 1 : -1);
-                setCurrent(index);
+                setDirection(i > current ? 1 : -1);
+                setCurrent(i);
               }}
+              aria-label={`Go to slide ${i + 1}`}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                index === current ? "w-8 bg-orange" : "w-1.5 bg-border hover:bg-text-muted"
+                i === current ? "w-8 bg-orange" : "w-1.5 bg-text-hint hover:bg-text-muted"
               }`}
-              aria-label={`Go to slide ${index + 1}`}
             />
           ))}
         </div>
@@ -240,4 +190,3 @@ export function Hero() {
 function Dot() {
   return <span className="h-1 w-1 rounded-full bg-orange" />;
 }
-
