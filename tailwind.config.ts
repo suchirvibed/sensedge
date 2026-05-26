@@ -11,36 +11,40 @@ const config: Config = {
       colors: {
         orange: {
           DEFAULT: "#E85D04",
-          dark: "#c94e00",
-          tint: "#fff3ec",
+          dark: "#c44e00",
+          tint: "#fff4ec",
+          ring: "#ffd8bf",
         },
         bg: {
-          page: "#f0efe8",
+          page: "#fafaf9",     // cool near-white, replaces the warm beige
+          subtle: "#f5f5f4",   // subtle surface for sections that need contrast
           white: "#ffffff",
-          dark: "#17191a",
-          darker: "#111115",
+          dark: "#0a0a0a",     // near-black, tighter than the old #17191a
+          darker: "#000000",   // true black for hero/cta dark sections
         },
         text: {
-          primary: "#17191a",
-          body: "#444444",
-          muted: "#666666",
-          hint: "#999999",
+          primary: "#0a0a0a",
+          body: "#4b4b4b",
+          muted: "#737373",    // neutral-500, much cleaner than warm grey
+          hint: "#a3a3a3",
         },
         border: {
-          DEFAULT: "#e8e8ec",
-          dark: "#2a2a2e",
+          DEFAULT: "#e5e5e5",  // neutral-200
+          subtle: "#f0f0ef",
+          dark: "#1c1c1c",
+          strong: "#262626",
         },
         tint: {
-          blue: "#e8f4ff",
-          blueText: "#1a6bc4",
-          purple: "#f0eeff",
-          purpleText: "#5b4ec8",
-          green: "#eef7e8",
-          greenText: "#2d7a1a",
-          amber: "#fff8e6",
-          amberText: "#9a6700",
-          red: "#fff0f3",
-          redText: "#c0003c",
+          blue: "#eef4ff",
+          blueText: "#1f4fa8",
+          purple: "#f1efff",
+          purpleText: "#4c45a8",
+          green: "#ecf6e6",
+          greenText: "#246a14",
+          amber: "#fff5db",
+          amberText: "#84520b",
+          red: "#ffefef",
+          redText: "#b00020",
         },
         canvas: "#0a0a0f",
       },
@@ -49,27 +53,29 @@ const config: Config = {
         body: ["var(--font-body)", "system-ui", "sans-serif"],
       },
       borderRadius: {
-        card: "14px",
-        btn: "5px",
-        badge: "20px",
-        input: "6px",
+        card: "12px",
+        btn: "8px",          // softer than 5px — modern but not pill
+        badge: "999px",      // pill chips
+        input: "8px",
       },
       maxWidth: {
         container: "1200px",
       },
       spacing: {
-        section: "100px",
-        nav: "88px",
+        section: "120px",    // more breathing room
+        nav: "72px",         // tighter nav
       },
       boxShadow: {
-        card: "4px 4px 24px rgba(0,0,0,0.07)",
-        hover: "4px 10px 32px rgba(0,0,0,0.12)",
+        // Lighter, more refined — flat with definition
+        card: "0 1px 2px rgba(0,0,0,0.04), 0 1px 1px rgba(0,0,0,0.02)",
+        hover: "0 4px 16px -4px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04)",
+        ring: "0 0 0 1px rgba(0,0,0,0.06)",
       },
       transitionDuration: {
-        DEFAULT: "300ms",
+        DEFAULT: "200ms",     // snappier
       },
       animation: {
-        ticker: "ticker 30s linear infinite",
+        ticker: "ticker 40s linear infinite",
       },
       keyframes: {
         ticker: {

@@ -15,23 +15,23 @@ interface BaseProps {
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-orange text-white hover:bg-orange-dark border border-orange hover:border-orange-dark",
+    "bg-orange text-white hover:bg-orange-dark border border-orange hover:border-orange-dark shadow-card hover:shadow-hover",
   outline:
-    "bg-transparent text-text-primary border border-text-primary hover:bg-text-primary hover:text-white",
+    "bg-transparent text-text-primary border border-border hover:border-text-primary hover:bg-bg-page",
   ghost:
-    "bg-transparent text-text-primary border border-transparent hover:bg-black/5",
+    "bg-transparent text-text-primary border border-transparent hover:bg-bg-subtle",
   dark: "bg-bg-dark text-white border border-bg-dark hover:bg-bg-darker",
 };
 
 const SIZES: Record<Size, string> = {
-  md: "h-11 px-5 text-sm",
-  lg: "h-14 px-7 text-[15px]",
+  md: "h-10 px-4 text-sm",
+  lg: "h-12 px-6 text-[15px]",
 };
 
 function base(variant: Variant, size: Size, className?: string) {
   return cn(
-    "inline-flex items-center gap-3 rounded-btn font-semibold tracking-tight",
-    "transition duration-300 select-none whitespace-nowrap",
+    "inline-flex items-center gap-2.5 rounded-btn font-semibold tracking-tight",
+    "transition-all duration-200 select-none whitespace-nowrap",
     SIZES[size],
     VARIANTS[variant],
     className
@@ -41,14 +41,14 @@ function base(variant: Variant, size: Size, className?: string) {
 function ArrowBox({ variant }: { variant: Variant }) {
   const bg =
     variant === "primary"
-      ? "bg-orange-dark text-white"
+      ? "bg-white/20 text-white"
       : variant === "dark"
-      ? "bg-black/30 text-white"
-      : "bg-black/10 text-current group-hover:bg-white/20";
+      ? "bg-white/15 text-white"
+      : "bg-bg-subtle text-current group-hover:bg-text-primary/10";
   return (
     <span
       className={cn(
-        "inline-flex h-6 w-6 items-center justify-center rounded-[3px] text-xs transition",
+        "ml-1 inline-flex h-5 w-5 items-center justify-center rounded-[4px] text-[11px] transition-transform duration-200 group-hover:translate-x-0.5",
         bg
       )}
     >

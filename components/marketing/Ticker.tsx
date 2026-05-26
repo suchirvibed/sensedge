@@ -12,21 +12,20 @@ const ITEMS = [
 ];
 
 export function Ticker() {
-  // Duplicate items for seamless infinite scroll
   const list = [...ITEMS, ...ITEMS];
   return (
     <div
       id="after-hero"
-      className="group overflow-hidden border-y border-border-dark bg-bg-dark py-6"
+      className="group overflow-hidden border-y border-border bg-bg-page py-5"
     >
-      <div className="flex w-max items-center gap-10 whitespace-nowrap animate-ticker group-hover:[animation-play-state:paused]">
+      <div className="flex w-max items-center gap-12 whitespace-nowrap animate-ticker group-hover:[animation-play-state:paused]">
         {list.map((item, i) => (
           <span
             key={`${item}-${i}`}
-            className="flex items-center gap-10 text-sm font-semibold uppercase tracking-[0.18em] text-white"
+            className="flex items-center gap-12 text-xs font-medium uppercase tracking-[0.22em] text-text-muted"
           >
             {item}
-            <span className="text-orange">■</span>
+            <span className="h-1 w-1 rounded-full bg-text-hint" />
           </span>
         ))}
       </div>

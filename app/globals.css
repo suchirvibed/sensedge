@@ -6,33 +6,33 @@
 
 :root {
   --orange: #E85D04;
-  --orange-dark: #c94e00;
-  --orange-tint: #fff3ec;
+  --orange-dark: #c44e00;
+  --orange-tint: #fff4ec;
 
-  --bg-page: #f0efe8;
+  --bg-page: #fafaf9;
+  --bg-subtle: #f5f5f4;
   --bg-white: #ffffff;
-  --bg-dark: #17191a;
-  --bg-darker: #111115;
+  --bg-dark: #0a0a0a;
+  --bg-darker: #000000;
 
-  --text-primary: #17191a;
-  --text-body: #444444;
-  --text-muted: #666666;
-  --text-hint: #999999;
+  --text-primary: #0a0a0a;
+  --text-body: #4b4b4b;
+  --text-muted: #737373;
+  --text-hint: #a3a3a3;
 
-  --border: #e8e8ec;
-  --border-dark: #2a2a2e;
+  --border: #e5e5e5;
+  --border-subtle: #f0f0ef;
+  --border-dark: #1c1c1c;
 
   --canvas-bg: #0a0a0f;
 
   --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
 
-  --section-pad: 100px;
+  --section-pad: 120px;
   --container: 1200px;
-  --container-px: 40px;
-  --nav-height: 88px;
-  --divider-w: 60px;
-  --divider-h: 3px;
+  --container-px: 32px;
+  --nav-height: 72px;
 }
 
 html {
@@ -44,52 +44,48 @@ body {
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-body);
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
-}
-
-::selection {
-  background: var(--orange);
-  color: #fff;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @layer components {
+  /* Display — restrained, used only for the marquee hero line */
   .display {
     font-family: var(--font-display);
-    font-size: clamp(48px, 8vw, 96px);
-    font-weight: 800;
-    line-height: 0.92;
-    letter-spacing: -0.03em;
+    font-size: clamp(40px, 6vw, 76px);
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
   }
   .h1 {
     font-family: var(--font-display);
-    font-size: clamp(36px, 5vw, 64px);
-    font-weight: 800;
-    line-height: 0.95;
-    letter-spacing: -0.02em;
+    font-size: clamp(32px, 4.5vw, 52px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
   }
   .h2 {
     font-family: var(--font-display);
-    font-size: clamp(26px, 3.5vw, 44px);
+    font-size: clamp(24px, 3vw, 36px);
     font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.01em;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
   }
   .h3 {
     font-family: var(--font-display);
-    font-size: clamp(18px, 2vw, 24px);
+    font-size: clamp(16px, 1.6vw, 20px);
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
   }
   .eyebrow {
     font-family: var(--font-body);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--text-muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    letter-spacing: 0.16em;
+    color: var(--orange);
   }
   .container-px {
     padding-left: var(--container-px);
@@ -99,17 +95,19 @@ body {
     padding-top: var(--section-pad);
     padding-bottom: var(--section-pad);
   }
-  .orange-divider {
-    width: var(--divider-w);
-    height: var(--divider-h);
-    background: var(--orange);
-    border: 0;
-    margin: 18px 0 0 0;
-  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  /* Subtle inner ring used on cards instead of heavy shadow */
+  .ring-card {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+}
+
+::selection {
+  background: rgba(232, 93, 4, 0.18);
+  color: var(--text-primary);
 }

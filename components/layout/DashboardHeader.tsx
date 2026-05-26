@@ -7,10 +7,12 @@ export async function DashboardHeader() {
   const u = session.user;
 
   return (
-    <header className="flex h-nav flex-none items-center justify-between border-b border-border bg-white px-6">
+    <header className="flex h-nav flex-none items-center justify-between border-b border-border bg-bg-page/85 px-6 backdrop-blur-md">
       <div className="text-sm text-text-muted">
-        Logged in as{" "}
-        <span className="font-semibold text-text-primary">{u.name || u.email}</span>
+        Welcome back,{" "}
+        <span className="font-semibold text-text-primary">
+          {u.name?.split(" ")[0] || u.email}
+        </span>
       </div>
       <UserMenu
         user={{

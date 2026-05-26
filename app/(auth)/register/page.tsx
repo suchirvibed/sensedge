@@ -11,20 +11,20 @@ export default async function RegisterPage() {
   if (session?.user) redirect("/dashboard");
 
   return (
-    <div className="w-full max-w-md rounded-card bg-white p-10 shadow-card">
-      <span className="eyebrow text-text-muted">
-        <span className="text-orange">■</span> GET STARTED
-      </span>
-      <h1 className="h2 mt-3 text-text-primary">Create your account</h1>
-      <hr className="orange-divider" />
+    <div className="w-full max-w-md rounded-card border border-border bg-white p-10">
+      <div className="eyebrow mb-3">Get started</div>
+      <h1 className="h2 text-text-primary">Create your account</h1>
+      <p className="mt-2 text-sm text-text-muted">
+        Design and order professional cards in minutes.
+      </p>
 
       <Suspense fallback={null}>
         <RegisterForm />
       </Suspense>
 
-      <p className="mt-6 text-center text-sm text-text-muted">
+      <p className="mt-8 text-center text-sm text-text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="font-semibold text-orange hover:underline">
+        <Link href="/login" className="font-semibold text-text-primary hover:text-orange">
           Log in
         </Link>
       </p>
