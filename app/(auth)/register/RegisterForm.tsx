@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -106,6 +107,8 @@ export function RegisterForm() {
       >
         {busy ? "Creating…" : "Create account"}
       </Button>
+
+      <GoogleSignInButton label="Sign up with Google" />
     </form>
   );
 }

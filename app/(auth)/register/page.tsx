@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { RegisterForm } from "./RegisterForm";
 
@@ -12,7 +13,9 @@ export default function RegisterPage() {
       <h1 className="h2 mt-3 text-text-primary">Create your account</h1>
       <hr className="orange-divider" />
 
-      <RegisterForm />
+      <Suspense fallback={null}>
+        <RegisterForm />
+      </Suspense>
 
       <p className="mt-6 text-center text-sm text-text-muted">
         Already have an account?{" "}

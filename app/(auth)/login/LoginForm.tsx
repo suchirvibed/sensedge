@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 export function LoginForm() {
   const router = useRouter();
@@ -67,6 +68,8 @@ export function LoginForm() {
       >
         {busy ? "Logging in…" : "Log in"}
       </Button>
+
+      <GoogleSignInButton label="Continue with Google" />
     </form>
   );
 }
