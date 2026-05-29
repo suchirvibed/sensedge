@@ -131,7 +131,7 @@ export function Hero() {
                   </LinkButton>
                 </div>
 
-                <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs text-text-muted">
+                <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 text-[15.6px] font-bold text-text-muted">
                   <span className="flex items-center gap-2">
                     <Dot /> No design experience required
                   </span>
