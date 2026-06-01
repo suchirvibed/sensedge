@@ -84,7 +84,7 @@ export function Hero() {
   const slide = SLIDES[current];
 
   return (
-    <section className="relative flex min-h-[700px] items-center overflow-hidden bg-bg-page">
+    <section className="relative overflow-hidden bg-bg-page">
       {/* Faint geometric grid */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.025]"
@@ -95,7 +95,7 @@ export function Hero() {
         }}
       />
 
-      <div className="container-px relative mx-auto w-full max-w-container py-24 md:py-32">
+      <div className="container-px relative mx-auto w-full max-w-container py-12 md:py-16">
         <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
           {/* Left — content */}
           <div className="relative min-h-[440px]">
@@ -167,7 +167,7 @@ export function Hero() {
         </div>
 
         {/* Carousel indicators */}
-        <div className="mt-10 flex items-center justify-center gap-2 lg:justify-start">
+        <div className="mt-10 flex items-center justify-center gap-2">
           {SLIDES.map((s, i) => (
             <button
               key={s.kind}

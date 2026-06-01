@@ -13,18 +13,25 @@ const ICON_BG: Record<Tone, string> = {
   neutral: "bg-bg-subtle text-text-primary",
 };
 
+export interface ServiceCardDetails {
+  features: string[];
+  fromPrice?: string;
+}
+
 export function ServiceCard({
   icon,
   title,
   subtitle,
   tone = "neutral",
   href,
+  details,
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
   tone?: Tone;
   href?: string;
+  details?: ServiceCardDetails;
 }) {
   const inner = (
     <>
@@ -46,6 +53,36 @@ export function ServiceCard({
       </div>
       <h3 className="h3 mt-8 text-text-primary">{title}</h3>
       <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
+
+      {details && (
+        <div
+          className={cn(
+            "grid grid-rows-[0fr] transition-all duration-300 ease-out",
+            "group-hover:grid-rows-[1fr]"
+          )}
+        >
+          <div className="overflow-hidden">
+            <div className="mt-5 border-t border-border-subtle pt-4">
+              {details.fromPrice && (
+                <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-orange">
+                  From {details.fromPrice}
+                </div>
+              )}
+              <ul className="space-y-1.5">
+                {details.features.map((f) => (
+                  <li
+                    key={f}
+                    className="flex items-start gap-2 text-xs leading-relaxed text-text-body"
+                  >
+                    <span className="mt-1.5 h-1 w-1 flex-none rounded-full bg-orange" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 
