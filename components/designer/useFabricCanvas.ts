@@ -13,6 +13,25 @@ export interface SelectionInfo {
   textAlign?: string;
 }
 
+export interface ObjectSnapshot {
+  /** stable index — Fabric doesn't expose ids by default */
+  index: number;
+  type: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** Effective on-canvas pixel size after scale. */
+  effectiveWidth: number;
+  effectiveHeight: number;
+  /** Text-only */
+  fontSize?: number;
+  text?: string;
+  /** Image-only — the underlying natural size, useful for DPI checks. */
+  naturalWidth?: number;
+  naturalHeight?: number;
+}
+
 interface UseFabricCanvasArgs {
   /** Called on every meaningful change (used for autosave). */
   onChange?: () => void;
@@ -164,13 +183,24 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     return fc.toJSON();
   }, []);
 
-  const loadFromJSON = useCallback((json: object) => {
-    const fc = fcRef.current;
-    if (!fc) return;
-    fc.loadFromJSON(json, () => {
-      fc.requestRenderAll();
-    });
-  }, []);
+  const loadFromJSON = useCallback(
+    (json: object | null | undefined, done?: () => void) => {
+      const fc = fcRef.current;
+      if (!fc) return;
+      if (!json) {
+        fc.clear();
+        fc.backgroundColor = "#ffffff";
+        fc.requestRenderAll();
+        done?.();
+        return;
+      }
+      fc.loadFromJSON(json, () => {
+        fc.requestRenderAll();
+        done?.();
+      });
+    },
+    []
+  );
 
   const clear = useCallback(() => {
     const fc = fcRef.current;
@@ -180,10 +210,76 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.requestRenderAll();
   }, []);
 
+  /**
+   * Generate a small thumbnail for the design preview.
+   * multiplier=0.4 + quality=0.6 keeps the JPEG under ~50 KB so the
+   * Design.previewUrl column doesn't blow up the JSON payload.
+   */
   const toDataURL = useCallback((): string | null => {
     const fc = fcRef.current;
     if (!fc) return null;
-    return fc.toDataURL({ format: "jpeg", quality: 0.85 });
+    try {
+      return fc.toDataURL({ format: "jpeg", quality: 0.6, multiplier: 0.4 });
+    } catch (err) {
+      console.warn("toDataURL failed (likely a CORS-tainted image)", err);
+      return null;
+    }
+  }, []);
+
+  /** Whether the currently-selected object is a Textbox in edit mode. */
+  const isEditingText = useCallback((): boolean => {
+    const fc = fcRef.current;
+    if (!fc) return false;
+    const o = fc.getActiveObject() as fabric.Textbox | undefined;
+    return Boolean(o && (o as fabric.Textbox & { isEditing?: boolean }).isEditing);
+  }, []);
+
+  /** Snapshot every object on the canvas — used by print validation. */
+  const getObjectSnapshots = useCallback((): ObjectSnapshot[] => {
+    const fc = fcRef.current;
+    if (!fc) return [];
+    return fc.getObjects().map((o, index) => {
+      const obj = o as fabric.Object & {
+        getScaledWidth?: () => number;
+        getScaledHeight?: () => number;
+      };
+      const effectiveWidth =
+        typeof obj.getScaledWidth === "function" ? obj.getScaledWidth() : (o.width ?? 0) * (o.scaleX ?? 1);
+      const effectiveHeight =
+        typeof obj.getScaledHeight === "function" ? obj.getScaledHeight() : (o.height ?? 0) * (o.scaleY ?? 1);
+      const snap: ObjectSnapshot = {
+        index,
+        type: o.type ?? "unknown",
+        left: o.left ?? 0,
+        top: o.top ?? 0,
+        width: o.width ?? 0,
+        height: o.height ?? 0,
+        effectiveWidth,
+        effectiveHeight,
+      };
+      if (o.type === "textbox" || o.type === "i-text" || o.type === "text") {
+        const t = o as fabric.Textbox;
+        snap.fontSize = t.fontSize;
+        snap.text = t.text;
+      }
+      if (o.type === "image") {
+        const im = o as fabric.Image;
+        const elem = im.getElement?.() as HTMLImageElement | undefined;
+        snap.naturalWidth = elem?.naturalWidth ?? im.width;
+        snap.naturalHeight = elem?.naturalHeight ?? im.height;
+      }
+      return snap;
+    });
+  }, []);
+
+  /** Programmatically select an object by index — used by validation jump-to. */
+  const selectByIndex = useCallback((index: number) => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const obj = fc.getObjects()[index];
+    if (!obj) return;
+    fc.setActiveObject(obj);
+    fc.requestRenderAll();
   }, []);
 
   return {
@@ -199,5 +295,8 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     loadFromJSON,
     clear,
     toDataURL,
+    isEditingText,
+    getObjectSnapshots,
+    selectByIndex,
   };
 }
