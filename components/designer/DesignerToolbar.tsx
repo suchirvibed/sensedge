@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 interface Props {
   designName: string;
   onNameChange: (name: string) => void;
-  saveStatus: "idle" | "saving" | "saved";
+  saveStatus: "idle" | "saving" | "saved" | "error";
   onSaveLocal: () => void;
   onPlaceOrder: () => void;
   userName: string;
@@ -42,6 +42,7 @@ export function DesignerToolbar({
         <span className="text-xs text-white/40">
           {saveStatus === "saving" && "Saving…"}
           {saveStatus === "saved" && "All changes saved"}
+          {saveStatus === "error" && <span className="text-tint-redText">Save failed — try again</span>}
         </span>
       </div>
 

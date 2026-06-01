@@ -10,82 +10,170 @@ import { useFabricCanvas } from "./useFabricCanvas";
 import { CANVAS_PX, CARD_MM, DEFAULT_SPECS, type CardSpecs } from "./types";
 
 interface Props {
+  /** Either a real design id, or the literal "new" for an unsaved design. */
   designId: string;
   userName: string;
+  initialName?: string;
+  /** Loaded server-side from DB when designId is a real id. */
+  initialCanvas?: object | null;
 }
 
-interface PersistedDesign {
+interface PersistedLocal {
   name: string;
   canvas: object;
   specs: CardSpecs;
 }
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 const storageKey = (id: string) => `printcard:design:${id}`;
 
-export function DesignerApp({ designId, userName }: Props) {
+export function DesignerApp({
+  designId: initialDesignId,
+  userName,
+  initialName = "Untitled design",
+  initialCanvas,
+}: Props) {
   const router = useRouter();
-  const [designName, setDesignName] = useState("Untitled design");
+
+  // designId can change once: from "new" to a real id after the first save.
+  const [designId, setDesignId] = useState(initialDesignId);
+  const [designName, setDesignName] = useState(initialName);
   const [specs, setSpecs] = useState<CardSpecs>(DEFAULT_SPECS);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+
+  // Track whether anything has changed since the last DB save. Used to gate
+  // the explicit "Save draft" button so we don't hit the API for nothing.
+  const dirtyRef = useRef(false);
+  const localSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredRef = useRef(false);
 
-  // Autosave debounce timer
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const persist = useCallback(() => {
+  // ─── Local autosave (fast, every change) ───────────────
+  const persistLocal = useCallback(() => {
     if (typeof window === "undefined") return;
-    setSaveStatus("saving");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    dirtyRef.current = true;
+    if (localSaveTimer.current) clearTimeout(localSaveTimer.current);
+    localSaveTimer.current = setTimeout(() => {
       try {
-        const payload: PersistedDesign = {
+        const payload: PersistedLocal = {
           name: designName,
           canvas: (canvas.toJSON() ?? {}) as object,
           specs,
         };
         localStorage.setItem(storageKey(designId), JSON.stringify(payload));
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 1500);
       } catch (e) {
-        console.error("autosave failed", e);
-        setSaveStatus("idle");
+        console.warn("Local autosave failed", e);
       }
-    }, 600);
-  }, [designId, designName, specs]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, 500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designId, designName, specs]);
 
-  const canvas = useFabricCanvas({ onChange: persist });
+  const canvas = useFabricCanvas({ onChange: persistLocal });
 
-  // Restore from localStorage once canvas is ready
+  // ─── Restore canvas on mount ───────────────────────────
+  // Priority: server-loaded canvas > localStorage cache > blank.
   useEffect(() => {
     if (!canvas.ready || restoredRef.current) return;
     restoredRef.current = true;
     try {
+      if (initialCanvas) {
+        canvas.loadFromJSON(initialCanvas);
+        return;
+      }
       const raw = localStorage.getItem(storageKey(designId));
       if (!raw) return;
-      const data = JSON.parse(raw) as PersistedDesign;
+      const data = JSON.parse(raw) as PersistedLocal;
       if (data.name) setDesignName(data.name);
       if (data.specs) setSpecs(data.specs);
       if (data.canvas) canvas.loadFromJSON(data.canvas);
     } catch (e) {
       console.warn("Failed to restore design", e);
     }
-  }, [canvas.ready, designId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas.ready, designId]);
 
-  // Save when name or specs change
+  // Mirror name/specs changes into the local autosave.
   useEffect(() => {
     if (!canvas.ready) return;
-    persist();
-  }, [designName, specs, canvas.ready, persist]);
+    persistLocal();
+  }, [designName, specs, canvas.ready, persistLocal]);
 
-  function handlePlaceOrder() {
-    // Checkout isn't built yet. The design is already autosaved locally,
-    // so we route the user to their dashboard where they'll be able to
-    // resume / place orders once /checkout exists.
-    alert(
-      "Checkout is coming next — your design is autosaved locally. You'll be taken to your dashboard."
-    );
-    router.push("/dashboard");
-  }
+  // ─── DB save ───────────────────────────────────────────
+  const saveToDb = useCallback(async (): Promise<{ ok: boolean; id?: string }> => {
+    if (!canvas.ready) return { ok: false };
+    setSaveStatus("saving");
+    try {
+      const canvasJson = canvas.toJSON() ?? {};
+      const previewUrl = canvas.toDataURL();
+
+      if (designId === "new") {
+        const res = await fetch("/api/designs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: designName, canvasJson, previewUrl }),
+        });
+        if (!res.ok) throw new Error(`POST /api/designs ${res.status}`);
+        const data: { design: { id: string } } = await res.json();
+        // Migrate localStorage key from "new" to the real id so we don't
+        // accidentally clobber other "new" drafts.
+        try {
+          const stash = localStorage.getItem(storageKey("new"));
+          if (stash) {
+            localStorage.setItem(storageKey(data.design.id), stash);
+            localStorage.removeItem(storageKey("new"));
+          }
+        } catch {
+          /* localStorage may be unavailable; ignore */
+        }
+        setDesignId(data.design.id);
+        // Update the URL so a refresh loads the saved design.
+        window.history.replaceState(null, "", `/designer/${data.design.id}`);
+        dirtyRef.current = false;
+        setSaveStatus("saved");
+        window.setTimeout(() => setSaveStatus("idle"), 1500);
+        return { ok: true, id: data.design.id };
+      }
+
+      const res = await fetch(`/api/designs/${designId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: designName, canvasJson, previewUrl }),
+      });
+      if (!res.ok) throw new Error(`PUT /api/designs/${designId} ${res.status}`);
+      dirtyRef.current = false;
+      setSaveStatus("saved");
+      window.setTimeout(() => setSaveStatus("idle"), 1500);
+      return { ok: true, id: designId };
+    } catch (e) {
+      console.error("DB save failed", e);
+      setSaveStatus("error");
+      window.setTimeout(() => setSaveStatus("idle"), 2500);
+      return { ok: false };
+    }
+  }, [canvas, designId, designName]);
+
+  const handleSaveDraft = useCallback(() => {
+    void saveToDb();
+  }, [saveToDb]);
+
+  // ─── Continue to order ─────────────────────────────────
+  const handlePlaceOrder = useCallback(async () => {
+    const result = await saveToDb();
+    if (!result.ok || !result.id) {
+      alert("Couldn't save your design before checkout. Try again in a moment.");
+      return;
+    }
+    const sp = new URLSearchParams({
+      designId: result.id,
+      material: specs.material,
+      finish: specs.finish,
+      chip: specs.chip,
+      side: specs.side,
+      printer: specs.printer,
+      quantity: String(specs.quantity),
+    });
+    router.push(`/checkout?${sp.toString()}`);
+  }, [saveToDb, specs, router]);
 
   return (
     <>
@@ -106,7 +194,7 @@ export function DesignerApp({ designId, userName }: Props) {
           designName={designName}
           onNameChange={setDesignName}
           saveStatus={saveStatus}
-          onSaveLocal={persist}
+          onSaveLocal={handleSaveDraft}
           onPlaceOrder={handlePlaceOrder}
           userName={userName}
         />
