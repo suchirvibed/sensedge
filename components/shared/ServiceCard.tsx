@@ -25,13 +25,18 @@ export function ServiceCard({
   subtitle,
   tone = "neutral",
   href,
+  interactive,
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
   tone?: Tone;
   href?: string;
+  /** Show the hover arrow even when no `href` is set (e.g. when the card
+   *  is wrapped in a parent button/div that handles the click). */
+  interactive?: boolean;
 }) {
+  const showArrow = Boolean(href) || Boolean(interactive);
   const inner = (
     <>
       <div className="flex items-center justify-between">
@@ -43,7 +48,7 @@ export function ServiceCard({
         >
           {icon}
         </div>
-        {href && (
+        {showArrow && (
           <IconArrowUpRight
             size={18}
             className="text-text-hint opacity-0 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100 group-hover:text-orange"

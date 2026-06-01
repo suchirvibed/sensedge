@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   IconId,
   IconRadar2,
@@ -134,76 +134,13 @@ const CARDS: PreviewCard[] = [
   },
 ];
 
-// ─── Hover-intent timings ────────────────────────────────
-// Wait this long before opening on first hover, so accidental cursor
-// passes through the grid don't trigger anything.
-const OPEN_INTENT_MS = 220;
-// Grace period after mouse leaves card/panel before closing — lets the
-// cursor bridge between card and panel without flicker.
-const CLOSE_GRACE_MS = 160;
-
 export function CardTypesGrid() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearOpen = useCallback(() => {
-    if (openTimer.current) {
-      clearTimeout(openTimer.current);
-      openTimer.current = null;
-    }
-  }, []);
-  const clearClose = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }, []);
+  const openCard = useCallback((idx: number) => setActiveIndex(idx), []);
+  const closeNow = useCallback(() => setActiveIndex(null), []);
 
-  // Open intent — fires only if cursor stays on the card past the delay.
-  // If overlay is already open (browsing), switch immediately.
-  const requestOpen = useCallback(
-    (idx: number) => {
-      clearClose();
-      clearOpen();
-      setActiveIndex((current) => {
-        if (current === idx) return current;
-        if (current !== null) {
-          // Already browsing — switch content instantly.
-          return idx;
-        }
-        // Cold-start: wait for intent.
-        openTimer.current = setTimeout(() => {
-          setActiveIndex(idx);
-          openTimer.current = null;
-        }, OPEN_INTENT_MS);
-        return null;
-      });
-    },
-    [clearOpen, clearClose]
-  );
-
-  // Schedule a close after the grace period.
-  const requestClose = useCallback(() => {
-    clearOpen();
-    clearClose();
-    closeTimer.current = setTimeout(() => {
-      setActiveIndex(null);
-      closeTimer.current = null;
-    }, CLOSE_GRACE_MS);
-  }, [clearOpen, clearClose]);
-
-  const cancelClose = useCallback(() => {
-    clearClose();
-  }, [clearClose]);
-
-  const closeNow = useCallback(() => {
-    clearOpen();
-    clearClose();
-    setActiveIndex(null);
-  }, [clearOpen, clearClose]);
-
-  // Escape closes immediately
+  // Escape closes
   useEffect(() => {
     if (activeIndex === null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -212,14 +149,6 @@ export function CardTypesGrid() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [activeIndex, closeNow]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      clearOpen();
-      clearClose();
-    };
-  }, [clearOpen, clearClose]);
 
   const activeCard = activeIndex !== null ? CARDS[activeIndex] : null;
 
@@ -234,21 +163,24 @@ export function CardTypesGrid() {
         <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CARDS.map((c, i) => (
             <StaggerItem key={c.title}>
-              <div
-                onMouseEnter={() => requestOpen(i)}
-                onMouseLeave={requestClose}
-                onFocus={() => requestOpen(i)}
-                onBlur={requestClose}
-                className="h-full"
+              <button
+                type="button"
+                onClick={() => openCard(i)}
+                aria-haspopup="dialog"
+                aria-label={`Preview ${c.title}`}
+                className="block h-full w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange/40 focus-visible:rounded-card"
               >
+                {/* href omitted on purpose — the card opens the preview
+                    instead of navigating. The "Start designing" CTA
+                    inside the preview still routes to `c.href`. */}
                 <ServiceCard
                   icon={c.icon}
                   title={c.title}
                   subtitle={c.subtitle}
                   tone={c.tone}
-                  href={c.href}
+                  interactive
                 />
-              </div>
+              </button>
             </StaggerItem>
           ))}
         </Stagger>
@@ -257,8 +189,6 @@ export function CardTypesGrid() {
       <CardPreviewOverlay
         card={activeCard}
         activeIndex={activeIndex}
-        onEnter={cancelClose}
-        onLeave={requestClose}
         onClose={closeNow}
       />
     </section>

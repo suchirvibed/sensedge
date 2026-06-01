@@ -26,23 +26,14 @@ export interface PreviewCard {
 interface Props {
   /** The card currently being previewed. `null` means the overlay is closed. */
   card: PreviewCard | null;
-  /** Index of the active card (used as React key for cross-fade between cards). */
+  /** Index of the active card. Used as React key for cross-fade between cards. */
   activeIndex: number | null;
-  onEnter: () => void;
-  onLeave: () => void;
   onClose: () => void;
 }
 
-// Easing & timings — slow enough to feel intentional, fast enough to not drag.
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-export function CardPreviewOverlay({
-  card,
-  activeIndex,
-  onEnter,
-  onLeave,
-  onClose,
-}: Props) {
+export function CardPreviewOverlay({ card, activeIndex, onClose }: Props) {
   return (
     <AnimatePresence>
       {card && (
@@ -54,17 +45,13 @@ export function CardPreviewOverlay({
           transition={{ duration: 0.32, ease: EASE }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
-          {/* Backdrop — click closes; mouse enter also closes
-              (cursor-on-backdrop means user is "outside the page"). */}
+          {/* Backdrop — click closes. */}
           <div
             onClick={onClose}
-            onMouseEnter={onLeave}
             className="absolute inset-0 cursor-default bg-bg-darker/55 backdrop-blur-sm"
           />
 
-          {/* Panel — animates scale + y for substantial entrance.
-              Hover events keep the close timer cancelled while
-              the cursor is inside. */}
+          {/* Panel — animates scale + y for a substantial entrance. */}
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -74,8 +61,6 @@ export function CardPreviewOverlay({
               ease: EASE,
               opacity: { duration: 0.28 },
             }}
-            onMouseEnter={onEnter}
-            onMouseLeave={onLeave}
             className="relative z-10 w-full max-w-3xl overflow-hidden rounded-card bg-white shadow-hover"
             role="dialog"
             aria-modal="true"
@@ -91,7 +76,7 @@ export function CardPreviewOverlay({
               <IconX size={16} />
             </button>
 
-            {/* Content — cross-fades when switching between cards.
+            {/* Content — cross-fades when switching cards.
                 The outer panel stays mounted; only this inner block
                 swaps via its `key`. */}
             <AnimatePresence mode="wait">
