@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   IconArrowUpRight,
@@ -27,6 +27,10 @@ export interface ServiceCardDetails {
   description?: string;
 }
 
+// 90 ms grace period for the cursor to travel from the card to the
+// overlay panel. Cancelled if either edge re-enters.
+const CLOSE_DELAY = 90;
+
 export function ServiceCard({
   icon,
   title,
@@ -45,28 +49,46 @@ export function ServiceCard({
   details?: ServiceCardDetails;
 }) {
   const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canOverlay = Boolean(kind && details);
 
-  // Close on Escape when overlay is open
+  // ─── Open / close helpers ──────────────────────────────
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const openNow = useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
+
+  const closeSoon = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY);
+  }, [cancelClose]);
+
+  const closeNow = useCallback(() => {
+    cancelClose();
+    setOpen(false);
+  }, [cancelClose]);
+
+  // Escape closes immediately
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") closeNow();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, closeNow]);
 
-  // Lock body scroll while overlay is open
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  // Clean up timer on unmount
+  useEffect(() => () => cancelClose(), [cancelClose]);
 
+  // ─── Card ──────────────────────────────────────────────
   const cardInner = (
     <>
       <div className="flex items-center justify-between">
@@ -93,57 +115,61 @@ export function ServiceCard({
   const cardClasses =
     "group block rounded-card border border-border bg-white p-6 transition-all duration-200 hover:border-text-primary/20 hover:shadow-hover";
 
+  // Hover/focus only attach the open-on-enter handlers when we have an
+  // overlay to show. Without `kind` + `details` the card behaves exactly
+  // like before.
+  const hoverProps = canOverlay
+    ? {
+        onMouseEnter: openNow,
+        onMouseLeave: closeSoon,
+        onFocus: openNow,
+        onBlur: closeSoon,
+      }
+    : {};
+
   const card = href ? (
-    <Link
-      href={href}
-      className={cardClasses}
-      onFocus={() => canOverlay && setOpen(true)}
-      onBlur={(e) => {
-        // Only close if focus leaves the wrapper entirely
-        if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) {
-          setOpen(false);
-        }
-      }}
-    >
+    <Link href={href} className={cardClasses} {...hoverProps}>
       {cardInner}
     </Link>
   ) : (
-    <div className={cardClasses}>{cardInner}</div>
+    <div className={cardClasses} {...hoverProps}>
+      {cardInner}
+    </div>
   );
 
   return (
-    <div
-      className="relative"
-      onMouseEnter={() => canOverlay && setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <>
       {card}
 
       <AnimatePresence>
         {open && canOverlay && (
+          // Fullscreen flex container — handles centering with zero
+          // transform-fighting with motion's animations.
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-50"
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
-            {/* Backdrop (also closes when clicked) */}
-            <button
-              type="button"
-              aria-label="Close preview"
-              onClick={() => setOpen(false)}
+            {/* Backdrop (click + cursor-enter both close) */}
+            <div
+              onClick={closeNow}
+              onMouseEnter={closeSoon}
               className="absolute inset-0 cursor-default bg-bg-darker/55 backdrop-blur-sm"
             />
 
-            {/* Panel — centred, doesn't grow past viewport */}
+            {/* Panel — only animates opacity + scale.
+                Hover events on the panel cancel the pending close so the
+                cursor can travel card → panel without flicker. */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute left-1/2 top-1/2 w-[92vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-card bg-white shadow-hover"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              onMouseEnter={cancelClose}
+              onMouseLeave={closeSoon}
+              className="relative z-10 w-full max-w-3xl overflow-hidden rounded-card bg-white shadow-hover"
               role="dialog"
               aria-modal="true"
               aria-label={`${title} preview`}
@@ -152,7 +178,7 @@ export function ServiceCard({
               <button
                 type="button"
                 aria-label="Close"
-                onClick={() => setOpen(false)}
+                onClick={closeNow}
                 className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white/90 text-text-muted transition hover:border-text-primary hover:text-text-primary"
               >
                 <IconX size={16} />
@@ -182,7 +208,7 @@ export function ServiceCard({
                     )}
                   </div>
 
-                  <h3 className="font-display text-2xl font-bold tracking-tight text-text-primary mt-5">
+                  <h3 className="mt-5 font-display text-2xl font-bold tracking-tight text-text-primary">
                     {title}
                   </h3>
                   <p className="mt-2 text-sm leading-relaxed text-text-body">
@@ -220,6 +246,6 @@ export function ServiceCard({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
