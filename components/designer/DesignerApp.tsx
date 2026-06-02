@@ -6,6 +6,7 @@ import { IconDeviceDesktop } from "@tabler/icons-react";
 import { DesignerToolbar } from "./DesignerToolbar";
 import { DesignerLeftPanel } from "./DesignerLeftPanel";
 import { DesignerRightPanel } from "./DesignerRightPanel";
+import { DesignerTabBar, type TabMeta } from "./DesignerTabBar";
 import { useFabricCanvas } from "./useFabricCanvas";
 import {
   CANVAS_PX,
@@ -44,9 +45,16 @@ interface PersistedLocal {
   specs: CardSpecs;
 }
 
+interface StoredTabs {
+  list: TabMeta[];
+  activeId: string;
+}
+
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 const SCHEMA_V2 = "v2" as const;
+const MAX_TABS = 6;
+const TABS_KEY = "printcard:tabs:v1";
 const storageKey = (id: string) => `printcard:design:${id}`;
 
 function isV2(j: unknown): j is CanvasV2 {
@@ -57,6 +65,34 @@ function isV2(j: unknown): j is CanvasV2 {
   );
 }
 
+function isTempId(id: string): boolean {
+  return id.startsWith("new-") || id === "new";
+}
+
+function makeTempId(): string {
+  return `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function loadStoredTabs(): StoredTabs | null {
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredTabs;
+    if (!Array.isArray(parsed.list) || parsed.list.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistTabs(list: TabMeta[], activeId: string) {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify({ list, activeId }));
+  } catch (e) {
+    console.warn("Failed to persist tabs", e);
+  }
+}
+
 export function DesignerApp({
   designId: initialDesignId,
   userName,
@@ -65,6 +101,7 @@ export function DesignerApp({
 }: Props) {
   const router = useRouter();
 
+  // ── Active-tab live state ──────────────────────────────
   const [designId, setDesignId] = useState(initialDesignId);
   const [designName, setDesignName] = useState(initialName);
   const [specs, setSpecs] = useState<CardSpecs>(DEFAULT_SPECS);
@@ -73,11 +110,20 @@ export function DesignerApp({
   const [frontIssues, setFrontIssues] = useState<PrintIssue[]>([]);
   const [backIssues, setBackIssues] = useState<PrintIssue[]>([]);
 
-  // Mirrors so canvas event callbacks always see the latest values
+  // ── Tab strip state ────────────────────────────────────
+  const [tabs, setTabs] = useState<TabMeta[]>(() => [
+    { id: initialDesignId, name: initialName, isUnsaved: isTempId(initialDesignId) },
+  ]);
+
   const sideRef = useRef<Side>(side);
   sideRef.current = side;
+  const designIdRef = useRef<string>(designId);
+  designIdRef.current = designId;
+  const designNameRef = useRef(designName);
+  designNameRef.current = designName;
+  const specsRef = useRef(specs);
+  specsRef.current = specs;
 
-  // Per-side serialized canvas (the one not currently in the canvas widget)
   const frontJsonRef = useRef<object | null>(null);
   const backJsonRef = useRef<object | null>(null);
 
@@ -85,7 +131,6 @@ export function DesignerApp({
   const restoredRef = useRef(false);
 
   // ─── Canvas change handler ─────────────────────────────
-  // Runs validation for the CURRENT side, then schedules local autosave.
   function handleCanvasChange() {
     if (!canvas.ready) return;
     const snaps = canvas.getObjectSnapshots();
@@ -105,29 +150,79 @@ export function DesignerApp({
     return { schema: SCHEMA_V2, front, back };
   }, [canvas]);
 
-  // ─── Local autosave (fast) ─────────────────────────────
+  // ─── Local autosave (debounced) ────────────────────────
   function schedulePersistLocal() {
     if (localSaveTimer.current) clearTimeout(localSaveTimer.current);
-    localSaveTimer.current = setTimeout(() => {
-      try {
-        const payload: PersistedLocal = {
-          name: designName,
-          canvas: captureBothSides(),
-          specs,
-        };
-        localStorage.setItem(storageKey(designId), JSON.stringify(payload));
-      } catch (e) {
-        console.warn("Local autosave failed", e);
-      }
-    }, 500);
+    localSaveTimer.current = setTimeout(() => flushLocalSave(), 500);
   }
 
-  // ─── Restore on mount ──────────────────────────────────
+  // Synchronous flush — used before switching tabs so nothing is lost.
+  const flushLocalSave = useCallback(() => {
+    if (localSaveTimer.current) {
+      clearTimeout(localSaveTimer.current);
+      localSaveTimer.current = null;
+    }
+    if (!canvas.ready) return;
+    try {
+      const payload: PersistedLocal = {
+        name: designNameRef.current,
+        canvas: captureBothSides(),
+        specs: specsRef.current,
+      };
+      localStorage.setItem(storageKey(designIdRef.current), JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Local autosave failed", e);
+    }
+  }, [canvas, captureBothSides]);
+
+  // ─── Apply a stored design payload to the live canvas ──
+  const applyToCanvas = useCallback(
+    (data: PersistedLocal | null) => {
+      const safe = data ?? { name: "Untitled design", canvas: null, specs: DEFAULT_SPECS };
+      setDesignName(safe.name);
+      setSpecs(safe.specs);
+      setSide("FRONT");
+      setFrontIssues([]);
+      setBackIssues([]);
+
+      if (isV2(safe.canvas)) {
+        frontJsonRef.current = safe.canvas.front;
+        backJsonRef.current = safe.canvas.back;
+        canvas.loadFromJSON(safe.canvas.front);
+      } else if (safe.canvas) {
+        frontJsonRef.current = safe.canvas;
+        backJsonRef.current = null;
+        canvas.loadFromJSON(safe.canvas);
+      } else {
+        frontJsonRef.current = null;
+        backJsonRef.current = null;
+        canvas.loadFromJSON(null);
+      }
+    },
+    [canvas]
+  );
+
+  // ─── Restore tabs + initial canvas on mount ────────────
   useEffect(() => {
     if (!canvas.ready || restoredRef.current) return;
     restoredRef.current = true;
+
+    // Active tab: comes from URL/props.
+    // Tabs list: persisted in localStorage; we merge with the current designId.
+    const stored = loadStoredTabs();
+    let nextTabs: TabMeta[] = stored?.list ?? [];
+    nextTabs = nextTabs.slice(0, MAX_TABS);
+    if (!nextTabs.find((t) => t.id === initialDesignId)) {
+      nextTabs = [
+        { id: initialDesignId, name: initialName, isUnsaved: isTempId(initialDesignId) },
+        ...nextTabs,
+      ].slice(0, MAX_TABS);
+    }
+    setTabs(nextTabs);
+    persistTabs(nextTabs, initialDesignId);
+
+    // Server-provided canvas wins for the initial tab.
     try {
-      // Server-provided canvas wins
       if (initialCanvas) {
         if (isV2(initialCanvas)) {
           frontJsonRef.current = initialCanvas.front;
@@ -138,30 +233,31 @@ export function DesignerApp({
           backJsonRef.current = null;
           canvas.loadFromJSON(initialCanvas);
         }
-        return;
-      }
-      // Fallback: localStorage
-      const raw = localStorage.getItem(storageKey(designId));
-      if (!raw) return;
-      const data = JSON.parse(raw) as PersistedLocal;
-      if (data.name) setDesignName(data.name);
-      if (data.specs) setSpecs(data.specs);
-      if (data.canvas) {
-        if (isV2(data.canvas)) {
-          frontJsonRef.current = data.canvas.front;
-          backJsonRef.current = data.canvas.back;
-          canvas.loadFromJSON(data.canvas.front);
-        } else {
-          frontJsonRef.current = data.canvas as object;
-          backJsonRef.current = null;
-          canvas.loadFromJSON(data.canvas as object);
+      } else {
+        const raw = localStorage.getItem(storageKey(initialDesignId));
+        if (raw) {
+          const data = JSON.parse(raw) as PersistedLocal;
+          applyToCanvas(data);
         }
       }
     } catch (e) {
       console.warn("Failed to restore design", e);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas.ready, designId]);
+  }, [canvas.ready]);
+
+  // Keep the active tab's metadata in sync with the live name.
+  useEffect(() => {
+    setTabs((prev) => {
+      const found = prev.find((t) => t.id === designId);
+      if (!found || found.name === designName) return prev;
+      const next = prev.map((t) =>
+        t.id === designId ? { ...t, name: designName } : t
+      );
+      persistTabs(next, designId);
+      return next;
+    });
+  }, [designName, designId]);
 
   // Persist on name / specs changes
   useEffect(() => {
@@ -170,20 +266,110 @@ export function DesignerApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designName, specs, canvas.ready]);
 
+  // ─── Tab actions ───────────────────────────────────────
+  const switchToTab = useCallback(
+    (targetId: string) => {
+      if (targetId === designIdRef.current) return;
+      if (!canvas.ready) return;
+
+      // 1. Persist the leaving tab so the entering one is fresh.
+      flushLocalSave();
+
+      // 2. Load target from localStorage (DB load is via full nav for real ids).
+      let other: PersistedLocal | null = null;
+      try {
+        const raw = localStorage.getItem(storageKey(targetId));
+        if (raw) other = JSON.parse(raw) as PersistedLocal;
+      } catch {
+        /* ignore */
+      }
+
+      setDesignId(targetId);
+      applyToCanvas(other);
+      persistTabs(
+        // refresh active in storage (list stays the same)
+        tabs,
+        targetId
+      );
+
+      // 3. URL: real id → /designer/{id}; temp id → /designer/new
+      const urlId = isTempId(targetId) ? "new" : targetId;
+      window.history.replaceState(null, "", `/designer/${urlId}`);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canvas, flushLocalSave, applyToCanvas, tabs]
+  );
+
+  const addTab = useCallback(() => {
+    if (tabs.length >= MAX_TABS) return;
+    const tempId = makeTempId();
+    flushLocalSave();
+
+    const nextTabs: TabMeta[] = [
+      ...tabs,
+      { id: tempId, name: "Untitled design", isUnsaved: true },
+    ];
+    setTabs(nextTabs);
+    setDesignId(tempId);
+    applyToCanvas(null);
+    persistTabs(nextTabs, tempId);
+    window.history.replaceState(null, "", `/designer/new`);
+  }, [tabs, flushLocalSave, applyToCanvas]);
+
+  const closeTab = useCallback(
+    (idToClose: string) => {
+      const remaining = tabs.filter((t) => t.id !== idToClose);
+
+      // Drop the tab's localStorage cache. (Real designs stay in DB.)
+      try {
+        localStorage.removeItem(storageKey(idToClose));
+      } catch {
+        /* ignore */
+      }
+
+      // Don't ever leave the editor empty — auto-create a fresh tab.
+      let finalTabs = remaining;
+      if (finalTabs.length === 0) {
+        const tempId = makeTempId();
+        finalTabs = [{ id: tempId, name: "Untitled design", isUnsaved: true }];
+      }
+
+      setTabs(finalTabs);
+
+      // If the closed tab was active, switch to the first remaining tab.
+      if (idToClose === designIdRef.current) {
+        const next = finalTabs[0];
+        flushLocalSave();
+        setDesignId(next.id);
+        let other: PersistedLocal | null = null;
+        try {
+          const raw = localStorage.getItem(storageKey(next.id));
+          if (raw) other = JSON.parse(raw) as PersistedLocal;
+        } catch {
+          /* ignore */
+        }
+        applyToCanvas(other);
+        const urlId = isTempId(next.id) ? "new" : next.id;
+        window.history.replaceState(null, "", `/designer/${urlId}`);
+        persistTabs(finalTabs, next.id);
+      } else {
+        persistTabs(finalTabs, designIdRef.current);
+      }
+    },
+    [tabs, flushLocalSave, applyToCanvas]
+  );
+
   // ─── Side toggle (front ↔ back) ────────────────────────
   function handleSetSide(next: Side) {
     if (next === side) return;
-    // Save current canvas to current side's slot
     const currentJson = canvas.toJSON();
     if (side === "FRONT") frontJsonRef.current = currentJson;
     else backJsonRef.current = currentJson;
-    // Load the other side's stored canvas (may be null = blank)
     const otherJson = next === "FRONT" ? frontJsonRef.current : backJsonRef.current;
     canvas.loadFromJSON(otherJson);
     setSide(next);
   }
 
-  // Auto-clamp side to FRONT if user switches printSide to SINGLE while on BACK
   useEffect(() => {
     if (specs.side === "SINGLE" && side === "BACK") {
       handleSetSide("FRONT");
@@ -195,7 +381,6 @@ export function DesignerApp({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      // Don't fight Fabric's Textbox edit-mode keyboard handling
       if (canvas.isEditingText()) return;
       const target = e.target as HTMLElement | null;
       if (target) {
@@ -218,12 +403,14 @@ export function DesignerApp({
 
     const canvasJson = captureBothSides();
     const previewUrl = canvas.toDataURL();
+    const wasTemp = isTempId(designIdRef.current);
+    const tempIdAtStart = designIdRef.current;
 
     async function send(withPreview: boolean): Promise<{ design: { id: string } }> {
       const body: Record<string, unknown> = { name: designName, canvasJson };
       if (withPreview && previewUrl) body.previewUrl = previewUrl;
-      const method = designId === "new" ? "POST" : "PUT";
-      const url = designId === "new" ? "/api/designs" : `/api/designs/${designId}`;
+      const method = wasTemp ? "POST" : "PUT";
+      const url = wasTemp ? "/api/designs" : `/api/designs/${tempIdAtStart}`;
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -241,36 +428,55 @@ export function DesignerApp({
       try {
         data = await send(true);
       } catch (firstErr) {
-        // Most likely a payload-size error. Retry without the preview.
-        console.warn("Save with preview failed, retrying without preview:", firstErr);
+        console.warn("Save with preview failed, retrying without:", firstErr);
         data = await send(false);
       }
 
-      if (designId === "new") {
-        // Migrate the localStorage key so a refresh on the new URL still works.
+      if (wasTemp) {
+        const newId = data.design.id;
+        // Migrate localStorage key
         try {
-          const stash = localStorage.getItem(storageKey("new"));
+          const stash = localStorage.getItem(storageKey(tempIdAtStart));
           if (stash) {
-            localStorage.setItem(storageKey(data.design.id), stash);
-            localStorage.removeItem(storageKey("new"));
+            localStorage.setItem(storageKey(newId), stash);
+            localStorage.removeItem(storageKey(tempIdAtStart));
           }
         } catch {
           /* ignore */
         }
-        setDesignId(data.design.id);
-        window.history.replaceState(null, "", `/designer/${data.design.id}`);
+        // Update tabs metadata: temp id → real id
+        setTabs((prev) => {
+          const next = prev.map((t) =>
+            t.id === tempIdAtStart ? { id: newId, name: designName, isUnsaved: false } : t
+          );
+          persistTabs(next, newId);
+          return next;
+        });
+        setDesignId(newId);
+        window.history.replaceState(null, "", `/designer/${newId}`);
+      } else {
+        // Sync the saved=true flag (in case this tab was previously isUnsaved=true)
+        setTabs((prev) => {
+          const found = prev.find((t) => t.id === designIdRef.current);
+          if (!found || !found.isUnsaved) return prev;
+          const next = prev.map((t) =>
+            t.id === designIdRef.current ? { ...t, isUnsaved: false } : t
+          );
+          persistTabs(next, designIdRef.current);
+          return next;
+        });
       }
 
       setSaveStatus("saved");
       window.setTimeout(() => setSaveStatus("idle"), 1500);
-      return { ok: true, id: designId === "new" ? data.design.id : designId };
+      return { ok: true, id: wasTemp ? data.design.id : tempIdAtStart };
     } catch (e) {
       console.error("DB save failed:", e);
       setSaveStatus("error");
       window.setTimeout(() => setSaveStatus("idle"), 2500);
       return { ok: false };
     }
-  }, [canvas, captureBothSides, designId, designName]);
+  }, [canvas, captureBothSides, designName]);
 
   const handleSaveDraft = useCallback(() => {
     void saveToDb();
@@ -296,13 +502,12 @@ export function DesignerApp({
     router.push(`/checkout?${sp.toString()}`);
   }, [saveToDb, specs, router]);
 
-  // ─── Validation summary across both sides ──────────────
+  // ─── Validation summary ────────────────────────────────
   const summary = summarise([...frontIssues, ...backIssues]);
   const handleJumpToIssue = useCallback(
     (issue: PrintIssue) => {
       if (issue.side !== side) {
         handleSetSide(issue.side);
-        // wait a tick for the new side to load before selecting
         window.setTimeout(() => canvas.selectByIndex(issue.objectIndex), 80);
       } else {
         canvas.selectByIndex(issue.objectIndex);
@@ -330,6 +535,15 @@ export function DesignerApp({
       </div>
 
       <div className="hidden h-screen flex-col lg:flex">
+        <DesignerTabBar
+          tabs={tabs}
+          activeId={designId}
+          onSwitch={switchToTab}
+          onAdd={addTab}
+          onClose={closeTab}
+          canAdd={tabs.length < MAX_TABS}
+        />
+
         <DesignerToolbar
           designName={designName}
           onNameChange={setDesignName}
@@ -350,7 +564,6 @@ export function DesignerApp({
 
           {/* Canvas workspace */}
           <main className="relative flex flex-1 flex-col items-center justify-center bg-[radial-gradient(circle,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:18px_18px]">
-            {/* Top bar — side toggle + validation badge */}
             <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
               {doubleSided ? (
                 <SideToggle current={side} onChange={handleSetSide} />
@@ -372,13 +585,11 @@ export function DesignerApp({
               Card {side === "FRONT" ? "front" : "back"} · {CARD_MM.w} × {CARD_MM.h} mm
             </div>
 
-            {/* Canvas + safe-area dashed overlay */}
             <div
               className="relative overflow-hidden rounded-card shadow-[0_20px_60px_-15px_rgba(232,93,4,0.4)] ring-1 ring-orange/40"
               style={{ width: CANVAS_PX.w, height: CANVAS_PX.h }}
             >
               <canvas ref={canvas.elRef} width={CANVAS_PX.w} height={CANVAS_PX.h} />
-              {/* Safe area guide — never captures pointer events */}
               <div
                 aria-hidden
                 className="pointer-events-none absolute border border-dashed border-orange/50"
@@ -392,7 +603,11 @@ export function DesignerApp({
             </div>
 
             <div className="mt-4 text-[10px] uppercase tracking-widest text-white/30">
-              Click to select · Drag corners to resize · Press <kbd className="rounded bg-white/10 px-1 py-0.5 text-[9px] text-white">Delete</kbd> to remove
+              Click to select · Drag corners to resize · Press{" "}
+              <kbd className="rounded bg-white/10 px-1 py-0.5 text-[9px] text-white">
+                Delete
+              </kbd>{" "}
+              to remove
             </div>
           </main>
 
