@@ -652,6 +652,14 @@ export function DesignerApp({
 
         <div className="flex flex-1 overflow-hidden">
           <DesignerLeftPanel
+            printer={specs.printer}
+            onPrinterChange={(printer) =>
+              setSpecs((s) => ({ ...s, printer }))
+            }
+            printSide={specs.side}
+            onPrintSideChange={(side) =>
+              setSpecs((s) => ({ ...s, side }))
+            }
             cardType={specs.cardType}
             onCardTypeChange={(cardType: CardType) =>
               setSpecs((s) => ({ ...s, cardType }))

@@ -25,10 +25,20 @@ import {
   CARD_SIZES,
   type CardType,
   type Orientation,
+  type PrinterKind,
+  type CardSide,
 } from "./types";
 import type { ObjectSnapshot } from "./useFabricCanvas";
 
 interface Props {
+  /** Printer compatibility radio */
+  printer: PrinterKind;
+  onPrinterChange: (p: PrinterKind) => void;
+
+  /** Print side radio (Single = front only, Double = both sides editable) */
+  printSide: CardSide;
+  onPrintSideChange: (s: CardSide) => void;
+
   /** Card-type radio */
   cardType: CardType;
   onCardTypeChange: (t: CardType) => void;
@@ -120,6 +130,10 @@ export function DesignerLeftPanel(props: Props) {
 
 // ─── Content tab ─────────────────────────────────────────
 function ContentTab({
+  printer,
+  onPrinterChange,
+  printSide,
+  onPrintSideChange,
   cardType,
   onCardTypeChange,
   onLoadCardTypeDefaults,
@@ -152,6 +166,35 @@ function ContentTab({
 }) {
   return (
     <div className="space-y-5 p-5">
+      {/* Printer Compatibility */}
+      <Section title="Printer Compatibility">
+        <RadioRow
+          options={[
+            { value: "THERMAL", label: "Thermal" },
+            { value: "INKJET", label: "Inkjet" },
+          ]}
+          value={printer}
+          onChange={(v) => onPrinterChange(v as PrinterKind)}
+        />
+      </Section>
+
+      {/* Print Side */}
+      <Section title="Print Side">
+        <RadioRow
+          options={[
+            { value: "SINGLE", label: "Single Side" },
+            { value: "DOUBLE", label: "Both Sides" },
+          ]}
+          value={printSide}
+          onChange={(v) => onPrintSideChange(v as CardSide)}
+        />
+        {printSide === "DOUBLE" && (
+          <p className="mt-2 text-[10px] leading-relaxed text-white/45">
+            Use the FRONT / BACK pills above the card to switch sides.
+          </p>
+        )}
+      </Section>
+
       {/* Card Type */}
       <Section title="Card Type">
         <RadioRow

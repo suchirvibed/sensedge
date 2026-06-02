@@ -186,15 +186,6 @@ export function DesignerRightPanel({
               { value: "LED", label: "LED (+₹2.00)" },
             ]}
           />
-          <Select
-            label="Print side"
-            value={specs.side}
-            onChange={(v) => update("side", v as CardSpecs["side"])}
-            options={[
-              { value: "SINGLE", label: "Single" },
-              { value: "DOUBLE", label: "Double (+₹0.50)" },
-            ]}
-          />
           <div>
             <div className="mb-1.5 text-xs text-white/50">Quantity (min 25)</div>
             <input
