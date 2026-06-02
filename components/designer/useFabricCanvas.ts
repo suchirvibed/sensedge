@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { fabric } from "fabric";
-import { CANVAS_PX } from "./types";
+import { CANVAS_PX, getCanvasPx, type Orientation } from "./types";
 
 export interface SelectionInfo {
   type: "text" | "image" | "shape" | null;
@@ -14,30 +14,53 @@ export interface SelectionInfo {
 }
 
 export interface ObjectSnapshot {
-  /** stable index — Fabric doesn't expose ids by default */
   index: number;
   type: string;
   left: number;
   top: number;
   width: number;
   height: number;
-  /** Effective on-canvas pixel size after scale. */
   effectiveWidth: number;
   effectiveHeight: number;
-  /** Text-only */
+  /** Custom label set on creation (Photo, Name, Logo, …). Falls back to type. */
+  label: string;
   fontSize?: number;
   text?: string;
-  /** Image-only — the underlying natural size, useful for DPI checks. */
   naturalWidth?: number;
   naturalHeight?: number;
 }
 
 interface UseFabricCanvasArgs {
-  /** Called on every meaningful change (used for autosave). */
+  /** Called on every meaningful change (used for autosave + validation). */
   onChange?: () => void;
+  /** Orientation drives canvas dimensions. */
+  orientation?: Orientation;
+  /** Size id (lookup into CARD_SIZES). */
+  sizeId?: string;
 }
 
-export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
+const HISTORY_LIMIT = 30;
+
+// Monkey-patch Fabric serialisation once, globally, so our custom
+// `label` property round-trips through toJSON / loadFromJSON.
+let serializationPatched = false;
+function patchSerialization() {
+  if (serializationPatched) return;
+  serializationPatched = true;
+  const proto = fabric.Object.prototype as fabric.Object & {
+    toObject: (props?: string[]) => Record<string, unknown>;
+  };
+  const baseToObject = proto.toObject;
+  proto.toObject = function (propsToInclude?: string[]) {
+    return baseToObject.call(this, ["label", ...(propsToInclude ?? [])]);
+  };
+}
+
+export function useFabricCanvas({
+  onChange,
+  orientation = "HORIZONTAL",
+  sizeId = "STANDARD",
+}: UseFabricCanvasArgs = {}) {
   const elRef = useRef<HTMLCanvasElement>(null);
   const fcRef = useRef<fabric.Canvas | null>(null);
   const [selection, setSelection] = useState<SelectionInfo>({ type: null });
@@ -45,16 +68,65 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
+  // ── Undo / redo history ──────────────────────────────
+  const historyRef = useRef<{ stack: object[]; index: number }>({
+    stack: [],
+    index: -1,
+  });
+  const suppressHistoryRef = useRef(false);
+  const historyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  function refreshUndoRedoFlags() {
+    const h = historyRef.current;
+    setCanUndo(h.index > 0);
+    setCanRedo(h.index < h.stack.length - 1);
+  }
+
+  function pushHistorySnapshot(snap: object) {
+    const h = historyRef.current;
+    // Drop the redo branch
+    h.stack = h.stack.slice(0, h.index + 1);
+    h.stack.push(snap);
+    if (h.stack.length > HISTORY_LIMIT) {
+      h.stack.shift();
+    } else {
+      h.index++;
+    }
+    refreshUndoRedoFlags();
+  }
+
+  function pushHistoryFromCanvas() {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const snap = fc.toJSON(["label"]);
+    pushHistorySnapshot(snap);
+  }
+
+  function resetHistory() {
+    const fc = fcRef.current;
+    if (!fc) {
+      historyRef.current = { stack: [], index: -1 };
+    } else {
+      historyRef.current = { stack: [fc.toJSON(["label"])], index: 0 };
+    }
+    refreshUndoRedoFlags();
+  }
+
   // ── Init ────────────────────────────────────────────────
   useEffect(() => {
     if (!elRef.current) return;
+    patchSerialization();
+    const initial = getCanvasPx(sizeId, orientation);
     const fc = new fabric.Canvas(elRef.current, {
-      width: CANVAS_PX.w,
-      height: CANVAS_PX.h,
+      width: initial.w,
+      height: initial.h,
       backgroundColor: "#ffffff",
       preserveObjectStacking: true,
     });
     fcRef.current = fc;
+    resetHistory();
     setReady(true);
 
     const refresh = () => {
@@ -77,12 +149,17 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
       }
     };
 
-    const fireChange = () => {
-      onChangeRef.current?.();
+    const fireChange = () => onChangeRef.current?.();
+
+    // Debounced history push so a long drag = one entry, not 60.
+    const scheduleHistory = () => {
+      if (suppressHistoryRef.current) return;
+      if (historyTimer.current) clearTimeout(historyTimer.current);
+      historyTimer.current = setTimeout(() => {
+        pushHistoryFromCanvas();
+      }, 250);
     };
 
-    /** Returns true if the object's bounding rect has zero overlap with the
-     *  canvas — i.e. the user dragged it completely off the card. */
     const isFullyOffCanvas = (obj: fabric.Object): boolean => {
       const left = obj.left ?? 0;
       const top = obj.top ?? 0;
@@ -94,13 +171,11 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
         typeof (obj as fabric.Object & { getScaledHeight?: () => number }).getScaledHeight === "function"
           ? (obj as fabric.Object & { getScaledHeight: () => number }).getScaledHeight()
           : (obj.height ?? 0) * (obj.scaleY ?? 1);
-      const right = left + w;
-      const bottom = top + h;
       return (
-        right < 0 ||
-        left > CANVAS_PX.w ||
-        bottom < 0 ||
-        top > CANVAS_PX.h
+        left + w < 0 ||
+        left > fc.getWidth() ||
+        top + h < 0 ||
+        top > fc.getHeight()
       );
     };
 
@@ -108,57 +183,96 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.on("selection:updated", refresh);
     fc.on("selection:cleared", () => setSelection({ type: null }));
     fc.on("object:modified", (e) => {
-      // If the user dragged/scaled an object completely off the card,
-      // treat that as "throw it away" and remove silently. Partial
-      // overflow stays — the print validator will flag it as an error.
       const obj = e.target as fabric.Object | undefined;
       if (obj && isFullyOffCanvas(obj)) {
         fc.remove(obj);
         fc.discardActiveObject();
         fc.requestRenderAll();
-        // object:removed will fire and emit the change for us.
-        return;
+        return; // object:removed will fire change + history
       }
+      scheduleHistory();
       fireChange();
     });
-    fc.on("object:added", fireChange);
-    fc.on("object:removed", fireChange);
+    fc.on("object:added", () => {
+      scheduleHistory();
+      fireChange();
+    });
+    fc.on("object:removed", () => {
+      scheduleHistory();
+      fireChange();
+    });
 
     return () => {
+      if (historyTimer.current) clearTimeout(historyTimer.current);
       fc.dispose();
       fcRef.current = null;
       setReady(false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Resize canvas when orientation or size changes ─────
+  useEffect(() => {
+    const fc = fcRef.current;
+    if (!fc || !ready) return;
+    const next = getCanvasPx(sizeId, orientation);
+    fc.setWidth(next.w);
+    fc.setHeight(next.h);
+    fc.requestRenderAll();
+  }, [orientation, sizeId, ready]);
+
   // ── Mutators ────────────────────────────────────────────
-  const addText = useCallback(() => {
+  interface AddTextOpts {
+    text?: string;
+    label?: string;
+    left?: number;
+    top?: number;
+    width?: number;
+    fontSize?: number;
+    fontWeight?: string | number;
+    fontFamily?: string;
+    fill?: string;
+    textAlign?: string;
+  }
+
+  const addText = useCallback((opts?: AddTextOpts) => {
     const fc = fcRef.current;
     if (!fc) return;
-    const t = new fabric.Textbox("Your text", {
-      left: 40,
-      top: 40,
-      fontFamily: "Inter",
-      fontSize: 18,
-      fill: "#17191a",
-      width: 200,
+    const t = new fabric.Textbox(opts?.text ?? "Your text", {
+      left: opts?.left ?? 40,
+      top: opts?.top ?? 40,
+      fontFamily: opts?.fontFamily ?? "Inter",
+      fontSize: opts?.fontSize ?? 18,
+      fontWeight: opts?.fontWeight ?? "normal",
+      fill: opts?.fill ?? "#17191a",
+      width: opts?.width ?? 200,
+      textAlign: opts?.textAlign ?? "left",
     });
+    (t as fabric.Object & { label?: string }).label = opts?.label ?? "Text";
     fc.add(t);
     fc.setActiveObject(t);
     fc.requestRenderAll();
   }, []);
 
-  const addImage = useCallback((dataUrl: string) => {
+  interface AddImageOpts {
+    label?: string;
+    left?: number;
+    top?: number;
+    maxWidth?: number; // px
+  }
+
+  const addImage = useCallback((dataUrl: string, opts?: AddImageOpts) => {
     const fc = fcRef.current;
     if (!fc) return;
     fabric.Image.fromURL(
       dataUrl,
       (img) => {
-        const maxW = CANVAS_PX.w * 0.4;
+        const maxW = opts?.maxWidth ?? fc.getWidth() * 0.4;
         if (img.width && img.width > maxW) {
           img.scale(maxW / img.width);
         }
-        img.set({ left: 30, top: 30 });
+        img.set({ left: opts?.left ?? 30, top: opts?.top ?? 30 });
+        (img as fabric.Object & { label?: string }).label = opts?.label ?? "Image";
         fc.add(img);
         fc.setActiveObject(img);
         fc.requestRenderAll();
@@ -171,12 +285,38 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     (file: File) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        if (typeof e.target?.result === "string") addImage(e.target.result);
+        if (typeof e.target?.result === "string")
+          addImage(e.target.result, { label: "Photo" });
       };
       reader.readAsDataURL(file);
     },
     [addImage]
   );
+
+  const addPlaceholderRect = useCallback((opts: {
+    label: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    fill?: string;
+  }) => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const r = new fabric.Rect({
+      left: opts.left,
+      top: opts.top,
+      width: opts.width,
+      height: opts.height,
+      fill: opts.fill ?? "rgba(0,0,0,0.06)",
+      stroke: "rgba(0,0,0,0.25)",
+      strokeDashArray: [4, 4],
+      strokeWidth: 1,
+    });
+    (r as fabric.Object & { label?: string }).label = opts.label;
+    fc.add(r);
+    fc.requestRenderAll();
+  }, []);
 
   const updateActive = useCallback(
     (props: Partial<fabric.Textbox & fabric.Object>) => {
@@ -186,7 +326,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
       if (!o) return;
       o.set(props as Partial<fabric.Object>);
       fc.requestRenderAll();
-      // refresh selection panel
       if (o.type === "textbox" || o.type === "i-text" || o.type === "text") {
         const t = o as fabric.Textbox;
         setSelection({
@@ -216,22 +355,27 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
   const toJSON = useCallback((): object | null => {
     const fc = fcRef.current;
     if (!fc) return null;
-    return fc.toJSON();
+    return fc.toJSON(["label"]);
   }, []);
 
   const loadFromJSON = useCallback(
     (json: object | null | undefined, done?: () => void) => {
       const fc = fcRef.current;
       if (!fc) return;
+      suppressHistoryRef.current = true;
       if (!json) {
         fc.clear();
         fc.backgroundColor = "#ffffff";
         fc.requestRenderAll();
+        resetHistory();
+        suppressHistoryRef.current = false;
         done?.();
         return;
       }
       fc.loadFromJSON(json, () => {
         fc.requestRenderAll();
+        resetHistory();
+        suppressHistoryRef.current = false;
         done?.();
       });
     },
@@ -246,11 +390,59 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.requestRenderAll();
   }, []);
 
-  /**
-   * Generate a small thumbnail for the design preview.
-   * multiplier=0.4 + quality=0.6 keeps the JPEG under ~50 KB so the
-   * Design.previewUrl column doesn't blow up the JSON payload.
-   */
+  /** Like clear() but emits one history entry so it's undoable. */
+  const clearAll = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    // Suppress per-object removals → one batched history entry at the end
+    suppressHistoryRef.current = true;
+    fc.getObjects().slice().forEach((o) => fc.remove(o));
+    fc.discardActiveObject();
+    fc.requestRenderAll();
+    suppressHistoryRef.current = false;
+    pushHistoryFromCanvas();
+    onChangeRef.current?.();
+  }, []);
+
+  /** Run multiple add operations as a single undo step. */
+  const runBatch = useCallback((fn: () => void) => {
+    suppressHistoryRef.current = true;
+    fn();
+    suppressHistoryRef.current = false;
+    pushHistoryFromCanvas();
+    onChangeRef.current?.();
+  }, []);
+
+  const undo = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const h = historyRef.current;
+    if (h.index <= 0) return;
+    h.index--;
+    refreshUndoRedoFlags();
+    suppressHistoryRef.current = true;
+    fc.loadFromJSON(h.stack[h.index], () => {
+      fc.requestRenderAll();
+      suppressHistoryRef.current = false;
+      onChangeRef.current?.();
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const h = historyRef.current;
+    if (h.index >= h.stack.length - 1) return;
+    h.index++;
+    refreshUndoRedoFlags();
+    suppressHistoryRef.current = true;
+    fc.loadFromJSON(h.stack[h.index], () => {
+      fc.requestRenderAll();
+      suppressHistoryRef.current = false;
+      onChangeRef.current?.();
+    });
+  }, []);
+
   const toDataURL = useCallback((): string | null => {
     const fc = fcRef.current;
     if (!fc) return null;
@@ -262,7 +454,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     }
   }, []);
 
-  /** Whether the currently-selected object is a Textbox in edit mode. */
   const isEditingText = useCallback((): boolean => {
     const fc = fcRef.current;
     if (!fc) return false;
@@ -270,7 +461,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     return Boolean(o && (o as fabric.Textbox & { isEditing?: boolean }).isEditing);
   }, []);
 
-  /** Snapshot every object on the canvas — used by print validation. */
   const getObjectSnapshots = useCallback((): ObjectSnapshot[] => {
     const fc = fcRef.current;
     if (!fc) return [];
@@ -278,11 +468,24 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
       const obj = o as fabric.Object & {
         getScaledWidth?: () => number;
         getScaledHeight?: () => number;
+        label?: string;
       };
       const effectiveWidth =
-        typeof obj.getScaledWidth === "function" ? obj.getScaledWidth() : (o.width ?? 0) * (o.scaleX ?? 1);
+        typeof obj.getScaledWidth === "function"
+          ? obj.getScaledWidth()
+          : (o.width ?? 0) * (o.scaleX ?? 1);
       const effectiveHeight =
-        typeof obj.getScaledHeight === "function" ? obj.getScaledHeight() : (o.height ?? 0) * (o.scaleY ?? 1);
+        typeof obj.getScaledHeight === "function"
+          ? obj.getScaledHeight()
+          : (o.height ?? 0) * (o.scaleY ?? 1);
+
+      const fallbackLabel = ((): string => {
+        if (o.type === "textbox" || o.type === "i-text" || o.type === "text") return "Text";
+        if (o.type === "image") return "Image";
+        if (o.type === "rect") return "Shape";
+        return o.type ?? "Field";
+      })();
+
       const snap: ObjectSnapshot = {
         index,
         type: o.type ?? "unknown",
@@ -292,6 +495,7 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
         height: o.height ?? 0,
         effectiveWidth,
         effectiveHeight,
+        label: obj.label ?? fallbackLabel,
       };
       if (o.type === "textbox" || o.type === "i-text" || o.type === "text") {
         const t = o as fabric.Textbox;
@@ -308,7 +512,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     });
   }, []);
 
-  /** Programmatically select an object by index — used by validation jump-to. */
   const selectByIndex = useCallback((index: number) => {
     const fc = fcRef.current;
     if (!fc) return;
@@ -318,8 +521,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.requestRenderAll();
   }, []);
 
-  /** Programmatically remove an object by index — used by the
-   *  "Remove field" action on validation issues. */
   const removeByIndex = useCallback((index: number) => {
     const fc = fcRef.current;
     if (!fc) return;
@@ -330,6 +531,13 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.requestRenderAll();
   }, []);
 
+  // Re-export CANVAS_PX-style getter for the live size.
+  const getDimensions = useCallback((): { w: number; h: number } => {
+    const fc = fcRef.current;
+    if (!fc) return { w: CANVAS_PX.w, h: CANVAS_PX.h };
+    return { w: fc.getWidth(), h: fc.getHeight() };
+  }, []);
+
   return {
     elRef,
     ready,
@@ -337,15 +545,23 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     addText,
     addImage,
     addImageFromFile,
+    addPlaceholderRect,
     updateActive,
     deleteActive,
     toJSON,
     loadFromJSON,
     clear,
+    clearAll,
+    runBatch,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     toDataURL,
     isEditingText,
     getObjectSnapshots,
     selectByIndex,
     removeByIndex,
+    getDimensions,
   };
 }

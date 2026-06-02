@@ -9,11 +9,13 @@ import { DesignerRightPanel } from "./DesignerRightPanel";
 import { DesignerTabBar, type TabMeta } from "./DesignerTabBar";
 import { useFabricCanvas } from "./useFabricCanvas";
 import {
-  CANVAS_PX,
-  CARD_MM,
   DEFAULT_SPECS,
   DISPLAY_PPMM,
+  getCanvasPx,
+  getCardSize,
   type CardSpecs,
+  type CardType,
+  type Orientation,
 } from "./types";
 import {
   validateSide,
@@ -22,6 +24,7 @@ import {
   type PrintIssue,
 } from "./printValidation";
 import { PrintValidationBadge } from "./PrintValidationBadge";
+import { getDefaultFields } from "./cardTypeDefaults";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -140,7 +143,11 @@ export function DesignerApp({
     schedulePersistLocal();
   }
 
-  const canvas = useFabricCanvas({ onChange: handleCanvasChange });
+  const canvas = useFabricCanvas({
+    onChange: handleCanvasChange,
+    orientation: specs.orientation,
+    sizeId: specs.sizeId,
+  });
 
   // ─── Build the full {front, back} payload from refs + current canvas ─────
   const captureBothSides = useCallback((): CanvasV2 => {
@@ -532,6 +539,83 @@ export function DesignerApp({
 
   const doubleSided = specs.side === "DOUBLE";
   const safeInset = SAFE_AREA_MM * DISPLAY_PPMM;
+  const canvasPx = getCanvasPx(specs.sizeId, specs.orientation);
+  const currentSize = getCardSize(specs.sizeId);
+
+  // ─── Card-type defaults ────────────────────────────────
+  const handleLoadCardTypeDefaults = useCallback(() => {
+    if (specs.cardType === "OTHERS") return;
+    if (
+      !window.confirm(
+        "Replace the current side's design with the default fields? This can be undone."
+      )
+    ) {
+      return;
+    }
+    const fields = getDefaultFields(specs.cardType);
+    canvas.runBatch(() => {
+      canvas.clear();
+      for (const f of fields) {
+        if (f.kind === "text") {
+          canvas.addText({
+            text: f.text,
+            label: f.label,
+            left: f.left,
+            top: f.top,
+            width: f.width,
+            fontSize: f.fontSize,
+            fontWeight: f.fontWeight,
+            fill: f.fill,
+            textAlign: f.textAlign,
+          });
+        } else {
+          canvas.addPlaceholderRect({
+            label: f.label,
+            left: f.left,
+            top: f.top,
+            width: f.width,
+            height: f.height,
+          });
+        }
+      }
+    });
+  }, [specs.cardType, canvas]);
+
+  // ─── Clear current side ────────────────────────────────
+  const handleClearSide = useCallback(() => {
+    if (canvas.getObjectSnapshots().length === 0) return;
+    if (!window.confirm("Clear all fields on this side? You can undo.")) return;
+    canvas.clearAll();
+  }, [canvas]);
+
+  // ─── Per-side fields snapshot for the field list ───────
+  const fields = canvas.getObjectSnapshots();
+
+  // ─── Undo / redo keyboard shortcuts ────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod) return;
+      if (canvas.isEditingText()) return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      }
+      // Ctrl+Z / Cmd+Z → undo
+      // Ctrl+Shift+Z OR Ctrl+Y → redo
+      if (e.key === "z" || e.key === "Z") {
+        e.preventDefault();
+        if (e.shiftKey) canvas.redo();
+        else canvas.undo();
+      } else if (e.key === "y" || e.key === "Y") {
+        e.preventDefault();
+        canvas.redo();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [canvas]);
 
   return (
     <>
@@ -568,11 +652,31 @@ export function DesignerApp({
 
         <div className="flex flex-1 overflow-hidden">
           <DesignerLeftPanel
-            hasSelection={canvas.selection.type !== null}
-            onAddText={canvas.addText}
+            cardType={specs.cardType}
+            onCardTypeChange={(cardType: CardType) =>
+              setSpecs((s) => ({ ...s, cardType }))
+            }
+            onLoadCardTypeDefaults={handleLoadCardTypeDefaults}
+            sizeId={specs.sizeId}
+            onSizeChange={(sizeId) => setSpecs((s) => ({ ...s, sizeId }))}
+            orientation={specs.orientation}
+            onOrientationChange={(orientation: Orientation) =>
+              setSpecs((s) => ({ ...s, orientation }))
+            }
+            onAddText={() => canvas.addText()}
             onAddImageFile={canvas.addImageFromFile}
             onAddImageDataUrl={canvas.addImage}
-            onDeleteActive={canvas.deleteActive}
+            onSave={handleSaveDraft}
+            onClear={handleClearSide}
+            onUndo={canvas.undo}
+            onRedo={canvas.redo}
+            canUndo={canvas.canUndo}
+            canRedo={canvas.canRedo}
+            saveStatus={saveStatus}
+            side={side}
+            fields={fields}
+            onSelectField={canvas.selectByIndex}
+            onRemoveField={canvas.removeByIndex}
           />
 
           {/* Canvas workspace */}
@@ -596,14 +700,15 @@ export function DesignerApp({
             </div>
 
             <div className="mb-4 text-xs uppercase tracking-widest text-white/40">
-              Card {side === "FRONT" ? "front" : "back"} · {CARD_MM.w} × {CARD_MM.h} mm
+              Card {side === "FRONT" ? "front" : "back"} · {currentSize.w} × {currentSize.h} mm ·{" "}
+              {specs.orientation === "HORIZONTAL" ? "Landscape" : "Portrait"}
             </div>
 
             <div
               className="relative overflow-hidden rounded-card shadow-[0_20px_60px_-15px_rgba(232,93,4,0.4)] ring-1 ring-orange/40"
-              style={{ width: CANVAS_PX.w, height: CANVAS_PX.h }}
+              style={{ width: canvasPx.w, height: canvasPx.h }}
             >
-              <canvas ref={canvas.elRef} width={CANVAS_PX.w} height={CANVAS_PX.h} />
+              <canvas ref={canvas.elRef} width={canvasPx.w} height={canvasPx.h} />
               <div
                 aria-hidden
                 className="pointer-events-none absolute border border-dashed border-orange/50"
