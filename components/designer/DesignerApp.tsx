@@ -516,6 +516,19 @@ export function DesignerApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [side, canvas]
   );
+  const handleDeleteIssue = useCallback(
+    (issue: PrintIssue) => {
+      if (issue.side !== side) {
+        handleSetSide(issue.side);
+        // Wait one tick for the canvas to repaint the other side, then remove.
+        window.setTimeout(() => canvas.removeByIndex(issue.objectIndex), 80);
+      } else {
+        canvas.removeByIndex(issue.objectIndex);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [side, canvas]
+  );
 
   const doubleSided = specs.side === "DOUBLE";
   const safeInset = SAFE_AREA_MM * DISPLAY_PPMM;
@@ -534,7 +547,7 @@ export function DesignerApp({
         </div>
       </div>
 
-      <div className="hidden h-screen flex-col lg:flex">
+      <div className="hidden h-screen flex-col bg-canvas pt-3 lg:flex">
         <DesignerTabBar
           tabs={tabs}
           activeId={designId}
@@ -578,6 +591,7 @@ export function DesignerApp({
                 summary={summary}
                 currentSide={side}
                 onJumpToIssue={handleJumpToIssue}
+                onDeleteIssue={handleDeleteIssue}
               />
             </div>
 

@@ -6,6 +6,7 @@ import {
   IconCircleCheck,
   IconAlertCircle,
   IconChevronDown,
+  IconTrash,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/cn";
 import type { PrintIssue, ValidationSummary } from "./printValidation";
@@ -13,11 +14,18 @@ import type { PrintIssue, ValidationSummary } from "./printValidation";
 interface Props {
   summary: ValidationSummary;
   currentSide: "FRONT" | "BACK";
-  /** Click an issue to navigate to its side + select the object. */
+  /** Click an issue's body to navigate to its side + select the object. */
   onJumpToIssue: (issue: PrintIssue) => void;
+  /** Click an issue's trash button to delete the offending object outright. */
+  onDeleteIssue: (issue: PrintIssue) => void;
 }
 
-export function PrintValidationBadge({ summary, currentSide, onJumpToIssue }: Props) {
+export function PrintValidationBadge({
+  summary,
+  currentSide,
+  onJumpToIssue,
+  onDeleteIssue,
+}: Props) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -87,14 +95,12 @@ export function PrintValidationBadge({ summary, currentSide, onJumpToIssue }: Pr
               issues.map((issue, i) => {
                 const isCurrent = issue.side === currentSide;
                 return (
-                  <li key={i}>
+                  <li key={`${issue.side}-${issue.objectIndex}-${i}`} className="flex items-stretch">
+                    {/* Body — jumps to the object */}
                     <button
                       type="button"
-                      onClick={() => {
-                        onJumpToIssue(issue);
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-start gap-3 px-4 py-3 text-left text-xs transition hover:bg-white/5"
+                      onClick={() => onJumpToIssue(issue)}
+                      className="flex flex-1 items-start gap-3 px-4 py-3 text-left text-xs transition hover:bg-white/5"
                     >
                       <span
                         className={cn(
@@ -121,6 +127,17 @@ export function PrintValidationBadge({ summary, currentSide, onJumpToIssue }: Pr
                         </span>
                         <span className="mt-0.5 block text-white/65">{issue.message}</span>
                       </span>
+                    </button>
+
+                    {/* Trash — removes the field to fix the issue */}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${issue.label.toLowerCase()} (${issue.side === "FRONT" ? "front" : "back"})`}
+                      title="Remove this field"
+                      onClick={() => onDeleteIssue(issue)}
+                      className="flex w-10 flex-none items-center justify-center border-l border-white/5 text-white/40 transition hover:bg-tint-redText/10 hover:text-tint-redText"
+                    >
+                      <IconTrash size={14} />
                     </button>
                   </li>
                 );

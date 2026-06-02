@@ -81,10 +81,46 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
       onChangeRef.current?.();
     };
 
+    /** Returns true if the object's bounding rect has zero overlap with the
+     *  canvas — i.e. the user dragged it completely off the card. */
+    const isFullyOffCanvas = (obj: fabric.Object): boolean => {
+      const left = obj.left ?? 0;
+      const top = obj.top ?? 0;
+      const w =
+        typeof (obj as fabric.Object & { getScaledWidth?: () => number }).getScaledWidth === "function"
+          ? (obj as fabric.Object & { getScaledWidth: () => number }).getScaledWidth()
+          : (obj.width ?? 0) * (obj.scaleX ?? 1);
+      const h =
+        typeof (obj as fabric.Object & { getScaledHeight?: () => number }).getScaledHeight === "function"
+          ? (obj as fabric.Object & { getScaledHeight: () => number }).getScaledHeight()
+          : (obj.height ?? 0) * (obj.scaleY ?? 1);
+      const right = left + w;
+      const bottom = top + h;
+      return (
+        right < 0 ||
+        left > CANVAS_PX.w ||
+        bottom < 0 ||
+        top > CANVAS_PX.h
+      );
+    };
+
     fc.on("selection:created", refresh);
     fc.on("selection:updated", refresh);
     fc.on("selection:cleared", () => setSelection({ type: null }));
-    fc.on("object:modified", fireChange);
+    fc.on("object:modified", (e) => {
+      // If the user dragged/scaled an object completely off the card,
+      // treat that as "throw it away" and remove silently. Partial
+      // overflow stays — the print validator will flag it as an error.
+      const obj = e.target as fabric.Object | undefined;
+      if (obj && isFullyOffCanvas(obj)) {
+        fc.remove(obj);
+        fc.discardActiveObject();
+        fc.requestRenderAll();
+        // object:removed will fire and emit the change for us.
+        return;
+      }
+      fireChange();
+    });
     fc.on("object:added", fireChange);
     fc.on("object:removed", fireChange);
 
@@ -282,6 +318,18 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     fc.requestRenderAll();
   }, []);
 
+  /** Programmatically remove an object by index — used by the
+   *  "Remove field" action on validation issues. */
+  const removeByIndex = useCallback((index: number) => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const obj = fc.getObjects()[index];
+    if (!obj) return;
+    fc.remove(obj);
+    fc.discardActiveObject();
+    fc.requestRenderAll();
+  }, []);
+
   return {
     elRef,
     ready,
@@ -298,5 +346,6 @@ export function useFabricCanvas({ onChange }: UseFabricCanvasArgs = {}) {
     isEditingText,
     getObjectSnapshots,
     selectByIndex,
+    removeByIndex,
   };
 }
