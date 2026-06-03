@@ -182,6 +182,15 @@ function ContentTab({
         />
       </Section>
 
+      {isInkjet && (
+        <div className="rounded-md border border-orange/30 bg-orange/10 p-3 text-[11px] leading-relaxed text-orange/90">
+          Inkjet cards are blank — no design, finish or chip needed. Pick a
+          quantity in the centre panel and place the order.
+        </div>
+      )}
+
+      {!isInkjet && (
+        <>
       {/* Print Side */}
       <Section title="Print Side">
         <RadioRow
@@ -199,15 +208,6 @@ function ContentTab({
         )}
       </Section>
 
-      {isInkjet && (
-        <div className="rounded-md border border-orange/30 bg-orange/10 p-3 text-[11px] leading-relaxed text-orange/90">
-          Inkjet uses our stock template — design tools are disabled. Choose
-          your quantity on the right and continue to checkout.
-        </div>
-      )}
-
-      {!isInkjet && (
-        <>
       {/* Card Type */}
       <Section title="Card Type">
         <RadioRow

@@ -26,6 +26,7 @@ import {
 import { PrintValidationBadge } from "./PrintValidationBadge";
 import { getDefaultFields } from "./cardTypeDefaults";
 import type { GuideLine } from "./alignmentGuides";
+import { calculatePrice, formatINR } from "@/lib/pricing";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -723,7 +724,20 @@ export function DesignerApp({
             isInkjet={specs.printer === "INKJET"}
             printer={specs.printer}
             onPrinterChange={(printer) =>
-              setSpecs((s) => ({ ...s, printer }))
+              setSpecs((s) =>
+                printer === "INKJET"
+                  ? {
+                      // Inkjet cards are blank — clamp the design-relevant
+                      // specs to neutral so pricing is consistent.
+                      ...s,
+                      printer,
+                      material: "PVC",
+                      finish: "MATTE",
+                      chip: "NONE",
+                      side: "SINGLE",
+                    }
+                  : { ...s, printer }
+              )
             }
             printSide={specs.side}
             onPrintSideChange={(side) =>
@@ -765,6 +779,9 @@ export function DesignerApp({
                 }
                 onContinue={handlePlaceOrder}
                 quantity={specs.quantity}
+                onQuantityChange={(q) =>
+                  setSpecs((s) => ({ ...s, quantity: q }))
+                }
               />
             ) : (
               <>
@@ -846,15 +863,17 @@ export function DesignerApp({
             )}
           </main>
 
-          <DesignerRightPanel
-            selection={canvas.selection}
-            specs={specs}
-            onSpecsChange={setSpecs}
-            onUpdateActive={(props) =>
-              canvas.updateActive(props as Parameters<typeof canvas.updateActive>[0])
-            }
-            onPlaceOrder={handlePlaceOrder}
-          />
+          {specs.printer !== "INKJET" && (
+            <DesignerRightPanel
+              selection={canvas.selection}
+              specs={specs}
+              onSpecsChange={setSpecs}
+              onUpdateActive={(props) =>
+                canvas.updateActive(props as Parameters<typeof canvas.updateActive>[0])
+              }
+              onPlaceOrder={handlePlaceOrder}
+            />
+          )}
         </div>
       </div>
     </>
@@ -862,72 +881,187 @@ export function DesignerApp({
 }
 
 // ─── Inkjet bypass panel ──────────────────────────────────
-// Shown in place of the canvas when the user picks Inkjet. They don't
-// design Inkjet cards — we print our stock template — so the flow is
-// just: choose specs on the right → continue to checkout.
+// Inkjet cards are blank — no design, no finish, no chip, no print side.
+// The bypass panel becomes the complete order form: edit quantity, see
+// live price, place the order. We force neutral specs upstream so the
+// pricing engine returns a clean PVC-base × qty number.
 function InkjetBypassPanel({
   onSwitchToThermal,
   onContinue,
   quantity,
+  onQuantityChange,
 }: {
   onSwitchToThermal: () => void;
   onContinue: () => void;
   quantity: number;
+  onQuantityChange: (q: number) => void;
 }) {
   const canCheckout = quantity >= 25;
-  return (
-    <div className="flex w-full max-w-md flex-col items-center px-6 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange/15 text-orange">
-        <IconPrinter size={28} strokeWidth={1.6} />
-      </div>
-      <h2 className="mt-6 font-display text-2xl font-bold tracking-tight text-white">
-        Inkjet cards use our stock template
-      </h2>
-      <p className="mt-3 text-sm leading-relaxed text-white/65">
-        Inkjet printing is best for fast turnaround at scale. We print
-        on our pre-designed template — no custom design needed. Pick
-        your material, finish and quantity on the right, then place the order.
-      </p>
+  // Price for blank PVC at the chosen quantity. Specs are forced neutral
+  // upstream when the printer is INKJET, so this stays consistent with
+  // what the orders API will compute server-side.
+  const safeQty = Math.max(quantity, 1);
+  const price = calculatePrice({
+    quantity: safeQty,
+    material: "PVC",
+    finish: "MATTE",
+    chipType: "NONE",
+    printSide: "SINGLE",
+  });
 
-      <div className="mt-6 w-full rounded-md border border-white/10 bg-white/[0.03] p-4 text-left">
-        <div className="flex items-center justify-between text-xs">
-          <span className="uppercase tracking-widest text-white/45">
-            Current quantity
-          </span>
-          <span className="font-mono text-base font-semibold text-white">
-            {quantity > 0 ? `${quantity} cards` : "—"}
-          </span>
+  const stepQty = (delta: number) => {
+    onQuantityChange(Math.max(0, quantity + delta));
+  };
+
+  return (
+    <div className="flex w-full max-w-lg flex-col px-6">
+      {/* Header */}
+      <div className="flex flex-col items-center text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-orange/15 text-orange">
+          <IconPrinter size={26} strokeWidth={1.6} />
         </div>
-        {!canCheckout && (
-          <p className="mt-2 text-[11px] leading-relaxed text-tint-redText">
-            Set a quantity of at least 25 on the right panel to continue.
+        <h2 className="mt-5 font-display text-2xl font-bold tracking-tight text-white">
+          Blank Inkjet cards
+        </h2>
+        <p className="mt-2 max-w-md text-sm leading-relaxed text-white/65">
+          Plain unprinted PVC cards ready for your office inkjet printer. No
+          design, finish or chip — just pick a quantity and order.
+        </p>
+      </div>
+
+      {/* Quantity stepper */}
+      <div className="mt-7 rounded-card border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-3 flex items-baseline justify-between">
+          <span className="text-xs font-semibold uppercase tracking-widest text-white/55">
+            Quantity
+          </span>
+          <span className="text-[10px] text-white/40">Minimum 25 cards</span>
+        </div>
+        <div className="flex items-stretch gap-3">
+          <button
+            type="button"
+            aria-label="Decrease by 25"
+            onClick={() => stepQty(-25)}
+            disabled={quantity <= 0}
+            className="flex h-12 w-12 flex-none items-center justify-center rounded-md border border-white/10 text-xl text-white transition hover:bg-white/10 disabled:opacity-30"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={quantity ? quantity : ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") return onQuantityChange(0);
+              const n = parseInt(raw, 10);
+              if (Number.isFinite(n) && n >= 0) onQuantityChange(n);
+            }}
+            placeholder="0"
+            className={cn(
+              "h-12 w-full rounded-md border bg-black/20 text-center text-xl font-semibold text-white focus:outline-none",
+              quantity > 0 && quantity < 25
+                ? "border-tint-redText/40 focus:border-tint-redText"
+                : "border-white/10 focus:border-orange"
+            )}
+          />
+          <button
+            type="button"
+            aria-label="Increase by 25"
+            onClick={() => stepQty(25)}
+            className="flex h-12 w-12 flex-none items-center justify-center rounded-md border border-white/10 text-xl text-white transition hover:bg-white/10"
+          >
+            +
+          </button>
+        </div>
+        {quantity > 0 && quantity < 25 && (
+          <p className="mt-2 text-[11px] text-tint-redText">
+            Minimum order is 25 cards. We can&rsquo;t print fewer than that.
           </p>
         )}
       </div>
 
-      <div className="mt-7 flex w-full flex-col gap-2">
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={!canCheckout}
-          className={cn(
-            "inline-flex h-11 w-full items-center justify-center gap-2 rounded-btn text-sm font-semibold transition",
-            canCheckout
-              ? "bg-orange text-white hover:bg-orange-dark"
-              : "cursor-not-allowed bg-white/5 text-white/30"
-          )}
-        >
-          Continue to checkout
-          <IconArrowRight size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={onSwitchToThermal}
-          className="inline-flex h-10 w-full items-center justify-center rounded-btn border border-white/10 text-xs font-medium text-white/70 transition hover:bg-white/5 hover:text-white"
-        >
-          Switch to Thermal to design custom cards
-        </button>
-      </div>
+      {/* Live price (hidden until valid) */}
+      {canCheckout && (
+        <div className="mt-4 rounded-card border border-white/10 bg-white/[0.03] p-5">
+          <div className="space-y-2 text-sm">
+            <RowKV label="Per card" value={formatINR(price.pricePerCard)} />
+            <RowKV
+              label={`Subtotal (${quantity} cards)`}
+              value={formatINR(price.subtotalBeforeDiscount)}
+            />
+            {price.discountRate > 0 && (
+              <RowKV
+                label={`Bulk discount (${Math.round(price.discountRate * 100)}%)`}
+                value={`− ${formatINR(price.discountAmount)}`}
+                tone="orange"
+              />
+            )}
+            <RowKV
+              label="Shipping"
+              value={price.shipping === 0 ? "Free" : formatINR(price.shipping)}
+            />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between border-t border-white/10 pt-3">
+            <span className="text-xs uppercase tracking-widest text-white/55">
+              Total
+            </span>
+            <span className="font-display text-2xl font-bold tracking-tight text-white">
+              {formatINR(price.total)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* CTAs */}
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={!canCheckout}
+        className={cn(
+          "mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-btn text-sm font-semibold transition",
+          canCheckout
+            ? "bg-orange text-white hover:bg-orange-dark"
+            : "cursor-not-allowed bg-white/5 text-white/30"
+        )}
+      >
+        {canCheckout
+          ? `Place order · ${formatINR(price.total)}`
+          : "Set quantity to continue"}
+        {canCheckout && <IconArrowRight size={16} />}
+      </button>
+      <button
+        type="button"
+        onClick={onSwitchToThermal}
+        className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-btn border border-white/10 text-xs font-medium text-white/70 transition hover:bg-white/5 hover:text-white"
+      >
+        Switch to Thermal to design custom cards
+      </button>
+    </div>
+  );
+}
+
+function RowKV({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "orange";
+}) {
+  return (
+    <div className="flex items-baseline justify-between text-xs">
+      <span className="text-white/55">{label}</span>
+      <span
+        className={cn(
+          "font-mono",
+          tone === "orange" ? "text-orange" : "text-white/90"
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }
