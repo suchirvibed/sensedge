@@ -25,6 +25,7 @@ import {
 } from "./printValidation";
 import { PrintValidationBadge } from "./PrintValidationBadge";
 import { getDefaultFields } from "./cardTypeDefaults";
+import type { GuideLine } from "./alignmentGuides";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -143,10 +144,13 @@ export function DesignerApp({
     schedulePersistLocal();
   }
 
+  const [guideLines, setGuideLines] = useState<GuideLine[]>([]);
+
   const canvas = useFabricCanvas({
     onChange: handleCanvasChange,
     orientation: specs.orientation,
     sizeId: specs.sizeId,
+    onGuideLines: setGuideLines,
   });
 
   // ─── Build the full {front, back} payload from refs + current canvas ─────
@@ -384,10 +388,16 @@ export function DesignerApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specs.side]);
 
-  // ─── Delete key removes selected object ────────────────
+  // ─── Editor keyboard shortcuts ─────────────────────────
+  // Delete / Backspace — remove
+  // Arrow keys           — nudge 1px (Shift = 10px)
+  // Ctrl/Cmd+D           — duplicate
+  // Ctrl/Cmd+]           — bring forward
+  // Ctrl/Cmd+[           — send backward
+  // Ctrl/Cmd+Shift+]     — bring to front
+  // Ctrl/Cmd+Shift+[     — send to back
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (canvas.isEditingText()) return;
       const target = e.target as HTMLElement | null;
       if (target) {
@@ -395,9 +405,67 @@ export function DesignerApp({
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         if ((target as HTMLElement).isContentEditable) return;
       }
-      if (canvas.selection.type === null) return;
-      e.preventDefault();
-      canvas.deleteActive();
+
+      const isMod = e.ctrlKey || e.metaKey;
+      const hasSelection = canvas.selection.type !== null;
+
+      // Delete
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (!hasSelection) return;
+        e.preventDefault();
+        canvas.deleteActive();
+        return;
+      }
+
+      // Arrow nudge
+      if (hasSelection && !isMod) {
+        const step = e.shiftKey ? 10 : 1;
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          canvas.nudgeActive(-step, 0);
+          return;
+        }
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          canvas.nudgeActive(step, 0);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          canvas.nudgeActive(0, -step);
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          canvas.nudgeActive(0, step);
+          return;
+        }
+      }
+
+      if (!isMod) return;
+
+      // Cmd+D duplicate
+      if (e.key === "d" || e.key === "D") {
+        if (!hasSelection) return;
+        e.preventDefault();
+        canvas.duplicateActive();
+        return;
+      }
+      // Layer order
+      if (e.key === "]") {
+        if (!hasSelection) return;
+        e.preventDefault();
+        if (e.shiftKey) canvas.bringToFront();
+        else canvas.bringForward();
+        return;
+      }
+      if (e.key === "[") {
+        if (!hasSelection) return;
+        e.preventDefault();
+        if (e.shiftKey) canvas.sendToBack();
+        else canvas.sendBackward();
+        return;
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -727,14 +795,41 @@ export function DesignerApp({
                   bottom: safeInset,
                 }}
               />
+              {/* Alignment guide overlay — magenta dashed lines while dragging */}
+              {guideLines.length > 0 && (
+                <svg
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0"
+                  width={canvasPx.w}
+                  height={canvasPx.h}
+                  viewBox={`0 0 ${canvasPx.w} ${canvasPx.h}`}
+                >
+                  {guideLines.map((g, i) => (
+                    <line
+                      key={i}
+                      x1={g.x1}
+                      y1={g.y1}
+                      x2={g.x2}
+                      y2={g.y2}
+                      stroke="#ec4899"
+                      strokeWidth="1"
+                      strokeDasharray="4 3"
+                    />
+                  ))}
+                </svg>
+              )}
             </div>
 
-            <div className="mt-4 text-[10px] uppercase tracking-widest text-white/30">
-              Click to select · Drag corners to resize · Press{" "}
-              <kbd className="rounded bg-white/10 px-1 py-0.5 text-[9px] text-white">
-                Delete
-              </kbd>{" "}
-              to remove
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-white/30">
+              <span>
+                <Kbd>↑↓←→</Kbd> nudge · <Kbd>Shift</Kbd>+arrow = 10 px
+              </span>
+              <span>
+                <Kbd>Del</Kbd> remove · <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> duplicate
+              </span>
+              <span>
+                <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo
+              </span>
             </div>
           </main>
 
@@ -750,6 +845,15 @@ export function DesignerApp({
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Kbd helper ────────────────────────────────────────────
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold text-white">
+      {children}
+    </kbd>
   );
 }
 

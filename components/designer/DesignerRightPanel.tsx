@@ -187,17 +187,34 @@ export function DesignerRightPanel({
             ]}
           />
           <div>
-            <div className="mb-1.5 text-xs text-white/50">Quantity (min 25)</div>
+            <div className="mb-1.5 text-xs text-white/50">
+              Quantity{" "}
+              <span className="text-white/30">(minimum 25 cards)</span>
+            </div>
             <input
               type="number"
-              min={25}
-              step={25}
+              min={0}
+              step={1}
               value={specs.quantity}
-              onChange={(e) =>
-                update("quantity", Math.max(25, Number(e.target.value) || 25))
-              }
-              className="h-9 w-full rounded-md border border-white/10 bg-black/20 px-2 text-white focus:border-orange focus:outline-none"
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") return update("quantity", 0);
+                const n = parseInt(raw, 10);
+                if (Number.isFinite(n) && n >= 0) update("quantity", n);
+              }}
+              className={cn(
+                "h-9 w-full rounded-md border bg-black/20 px-2 text-white focus:outline-none",
+                specs.quantity < 25
+                  ? "border-tint-redText/40 focus:border-tint-redText"
+                  : "border-white/10 focus:border-orange"
+              )}
             />
+            {specs.quantity < 25 && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-tint-redText">
+                <span className="inline-block h-1 w-1 rounded-full bg-tint-redText" />
+                Minimum order is 25 cards. We can&rsquo;t print fewer than that.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -230,9 +247,10 @@ export function DesignerRightPanel({
           variant="primary"
           size="lg"
           showArrow
+          disabled={specs.quantity < 25}
           className="mt-4 w-full justify-center"
         >
-          Place order
+          {specs.quantity < 25 ? "Quantity below minimum" : "Place order"}
         </Button>
       </div>
     </aside>

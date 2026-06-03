@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { fabric } from "fabric";
 import { CANVAS_PX, getCanvasPx, type Orientation } from "./types";
+import { computeAlignment, type GuideLine } from "./alignmentGuides";
 
 export interface SelectionInfo {
   type: "text" | "image" | "shape" | null;
@@ -37,6 +38,9 @@ interface UseFabricCanvasArgs {
   orientation?: Orientation;
   /** Size id (lookup into CARD_SIZES). */
   sizeId?: string;
+  /** Called continuously during a drag with the current alignment guide
+   *  lines. Called with [] when the drag ends so the consumer can clear. */
+  onGuideLines?: (lines: GuideLine[]) => void;
 }
 
 const HISTORY_LIMIT = 30;
@@ -60,6 +64,7 @@ export function useFabricCanvas({
   onChange,
   orientation = "HORIZONTAL",
   sizeId = "STANDARD",
+  onGuideLines,
 }: UseFabricCanvasArgs = {}) {
   const elRef = useRef<HTMLCanvasElement>(null);
   const fcRef = useRef<fabric.Canvas | null>(null);
@@ -67,6 +72,8 @@ export function useFabricCanvas({
   const [ready, setReady] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onGuideLinesRef = useRef(onGuideLines);
+  onGuideLinesRef.current = onGuideLines;
 
   // ── Undo / redo history ──────────────────────────────
   const historyRef = useRef<{ stack: object[]; index: number }>({
@@ -124,6 +131,21 @@ export function useFabricCanvas({
       height: initial.h,
       backgroundColor: "#ffffff",
       preserveObjectStacking: true,
+      selectionColor: "rgba(232, 93, 4, 0.12)",
+      selectionBorderColor: "#E85D04",
+      selectionLineWidth: 1,
+    });
+
+    // Apply orange / circle handles globally for any object selection.
+    fabric.Object.prototype.set({
+      cornerColor: "#E85D04",
+      cornerStrokeColor: "#ffffff",
+      borderColor: "#E85D04",
+      cornerStyle: "circle",
+      cornerSize: 9,
+      transparentCorners: false,
+      borderScaleFactor: 1.5,
+      padding: 2,
     });
     fcRef.current = fc;
     resetHistory();
@@ -182,6 +204,36 @@ export function useFabricCanvas({
     fc.on("selection:created", refresh);
     fc.on("selection:updated", refresh);
     fc.on("selection:cleared", () => setSelection({ type: null }));
+
+    // ── Smart alignment guides ────────────────────────
+    fc.on("object:moving", (e) => {
+      const obj = e.target as fabric.Object | undefined;
+      if (!obj) return;
+      const others = fc.getObjects().filter((o) => o !== obj);
+      const getBox = (o: fabric.Object) => {
+        const w = (o as fabric.Object & { getScaledWidth?: () => number })
+          .getScaledWidth?.() ?? (o.width ?? 0) * (o.scaleX ?? 1);
+        const h = (o as fabric.Object & { getScaledHeight?: () => number })
+          .getScaledHeight?.() ?? (o.height ?? 0) * (o.scaleY ?? 1);
+        return { left: o.left ?? 0, top: o.top ?? 0, width: w, height: h };
+      };
+      const movBox = getBox(obj);
+      const otherBoxes = others.map(getBox);
+      const result = computeAlignment(movBox, otherBoxes, fc.getWidth(), fc.getHeight());
+
+      // Apply snap by adjusting object position
+      if (result.left !== undefined) obj.set({ left: result.left });
+      if (result.top !== undefined) obj.set({ top: result.top });
+
+      // Push guide lines up to the renderer
+      onGuideLinesRef.current?.(result.lines);
+    });
+
+    // Clear guides when the user releases the mouse
+    fc.on("mouse:up", () => {
+      onGuideLinesRef.current?.([]);
+    });
+
     fc.on("object:modified", (e) => {
       const obj = e.target as fabric.Object | undefined;
       if (obj && isFullyOffCanvas(obj)) {
@@ -531,6 +583,80 @@ export function useFabricCanvas({
     fc.requestRenderAll();
   }, []);
 
+  /** Move the active object by dx/dy pixels (keyboard nudging). */
+  const nudgeActive = useCallback((dx: number, dy: number) => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    o.set({ left: (o.left ?? 0) + dx, top: (o.top ?? 0) + dy });
+    o.setCoords();
+    fc.requestRenderAll();
+    fc.fire("object:modified", { target: o });
+  }, []);
+
+  /** Clone the active object 10px offset. */
+  const duplicateActive = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    o.clone(
+      (clone: fabric.Object) => {
+        clone.set({
+          left: (o.left ?? 0) + 12,
+          top: (o.top ?? 0) + 12,
+        });
+        (clone as fabric.Object & { label?: string }).label =
+          (o as fabric.Object & { label?: string }).label;
+        fc.add(clone);
+        fc.setActiveObject(clone);
+        fc.requestRenderAll();
+      },
+      ["label"]
+    );
+  }, []);
+
+  const bringForward = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    fc.bringForward(o);
+    fc.requestRenderAll();
+    onChangeRef.current?.();
+  }, []);
+
+  const sendBackward = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    fc.sendBackwards(o);
+    fc.requestRenderAll();
+    onChangeRef.current?.();
+  }, []);
+
+  const bringToFront = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    fc.bringToFront(o);
+    fc.requestRenderAll();
+    onChangeRef.current?.();
+  }, []);
+
+  const sendToBack = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    const o = fc.getActiveObject();
+    if (!o) return;
+    fc.sendToBack(o);
+    fc.requestRenderAll();
+    onChangeRef.current?.();
+  }, []);
+
   // Re-export CANVAS_PX-style getter for the live size.
   const getDimensions = useCallback((): { w: number; h: number } => {
     const fc = fcRef.current;
@@ -563,5 +689,11 @@ export function useFabricCanvas({
     selectByIndex,
     removeByIndex,
     getDimensions,
+    nudgeActive,
+    duplicateActive,
+    bringForward,
+    sendBackward,
+    bringToFront,
+    sendToBack,
   };
 }
