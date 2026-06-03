@@ -15,6 +15,47 @@ import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 import { formatINR, type PriceBreakdown } from "@/lib/pricing";
 
+// ─── Razorpay JS types ───────────────────────────────────
+interface RazorpaySuccessResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description?: string;
+  order_id: string;
+  prefill?: { name?: string; email?: string };
+  theme?: { color?: string };
+  handler?: (response: RazorpaySuccessResponse) => void;
+  modal?: { ondismiss?: () => void };
+}
+interface RazorpayInstance {
+  open: () => void;
+}
+type RazorpayConstructor = new (opts: RazorpayOptions) => RazorpayInstance;
+
+let razorpayScriptPromise: Promise<void> | null = null;
+function ensureRazorpayScript(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if ((window as unknown as { Razorpay?: unknown }).Razorpay) return Promise.resolve();
+  if (razorpayScriptPromise) return razorpayScriptPromise;
+  razorpayScriptPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve();
+    script.onerror = () => {
+      razorpayScriptPromise = null;
+      reject(new Error("Failed to load Razorpay script"));
+    };
+    document.body.appendChild(script);
+  });
+  return razorpayScriptPromise;
+}
+
 interface AddressLite {
   id: string;
   name: string;
@@ -104,6 +145,7 @@ export function CheckoutFlow({ user, design, specs, price, addresses }: Props) {
     setError(null);
     setBusy(true);
     try {
+      // ── 1. Create the order ──
       const payload: Record<string, unknown> = {
         designId: design.id,
         material: specs.material,
@@ -137,10 +179,109 @@ export function CheckoutFlow({ user, design, specs, price, addresses }: Props) {
       if (!res.ok) {
         throw new Error(data.error || "Order could not be placed");
       }
-      router.push(`/dashboard/orders/${data.order.id}?placed=1`);
+      const orderId = data.order.id as string;
+
+      // ── 2. COD path ── done; redirect.
+      if (paymentMethod === "COD") {
+        router.push(`/dashboard/orders/${orderId}?placed=1`);
+        return;
+      }
+
+      // ── 3. Razorpay path ── ask the server for a Razorpay order
+      const payCreate = await fetch("/api/payments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const payData = await payCreate.json();
+      if (!payCreate.ok) {
+        throw new Error(payData.error || "Could not start payment");
+      }
+
+      // Stub mode (no Razorpay keys): auto-succeed via verify with no-op
+      // signature so dev environments work end-to-end without keys.
+      if (payData.stub) {
+        const verifyRes = await fetch("/api/payments/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orderId,
+            razorpay_order_id: payData.razorpay_order_id,
+            razorpay_payment_id: `stub_pay_${Date.now()}`,
+            razorpay_signature: "stub_signature_accept_in_dev",
+          }),
+        });
+        const v = await verifyRes.json();
+        if (!verifyRes.ok) {
+          throw new Error(v.error || "Stub payment verification failed");
+        }
+        router.push(`/dashboard/orders/${orderId}?placed=1`);
+        return;
+      }
+
+      // Real Razorpay — load the JS and open the modal
+      await ensureRazorpayScript();
+      const RazorpayCtor = (window as unknown as { Razorpay?: RazorpayConstructor })
+        .Razorpay;
+      if (!RazorpayCtor) {
+        throw new Error("Razorpay script failed to load");
+      }
+      const rzp = new RazorpayCtor({
+        key: payData.key_id,
+        amount: payData.amount,
+        currency: payData.currency,
+        name: "PrintCard",
+        description: `Order ${data.order.orderNumber}`,
+        order_id: payData.razorpay_order_id,
+        prefill: { name: user.name, email: user.email },
+        theme: { color: "#E85D04" },
+        handler: async (response: RazorpaySuccessResponse) => {
+          try {
+            const verifyRes = await fetch("/api/payments/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                orderId,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const v = await verifyRes.json();
+            if (!verifyRes.ok) {
+              setError(v.error || "Payment verification failed");
+              setBusy(false);
+              return;
+            }
+            router.push(`/dashboard/orders/${orderId}?placed=1`);
+          } catch (verr) {
+            setError((verr as Error).message);
+            setBusy(false);
+          }
+        },
+        modal: {
+          ondismiss: async () => {
+            // User closed the modal without paying. Cancel the order so
+            // it doesn't sit forever in CONFIRMED/PENDING.
+            try {
+              await fetch("/api/payments/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orderId }),
+              });
+            } catch {
+              /* ignore */
+            }
+            setError(
+              "Payment was cancelled. The order has been cancelled — you can place a new one when ready."
+            );
+            setBusy(false);
+          },
+        },
+      });
+      rzp.open();
     } catch (e) {
       setError((e as Error).message);
-    } finally {
       setBusy(false);
     }
   }
@@ -253,18 +394,35 @@ function StepReview({
   specs: Props["specs"];
   onNext: () => void;
 }) {
+  const isInkjet = specs.printer === "INKJET";
+
   return (
     <>
       <h2 className="font-display text-xl font-bold tracking-tight text-text-primary">
-        Review your design
+        {isInkjet ? "Review your order" : "Review your design"}
       </h2>
       <p className="mt-2 text-sm text-text-muted">
-        Make sure everything looks right before continuing to delivery details.
+        {isInkjet
+          ? "Blank Inkjet cards ship as plain PVC stock — no design printed. Confirm the quantity below and continue to delivery."
+          : "Make sure everything looks right before continuing to delivery details."}
       </p>
 
       <div className="mt-6 grid gap-6 sm:grid-cols-[1fr_1.3fr]">
+        {/* Preview / Inkjet card mockup */}
         <div className="overflow-hidden rounded-card border border-border bg-bg-page">
-          {design.previewUrl ? (
+          {isInkjet ? (
+            <div className="flex aspect-[1.6/1] w-full flex-col items-center justify-center bg-white p-6 text-center">
+              <Badge tone="orange" className="mb-3 uppercase">
+                Inkjet
+              </Badge>
+              <div className="font-display text-base font-bold text-text-primary">
+                Blank PVC card
+              </div>
+              <div className="mt-1 text-[10px] uppercase tracking-widest text-text-muted">
+                Standard 87 × 57 mm
+              </div>
+            </div>
+          ) : design.previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={design.previewUrl}
@@ -277,21 +435,33 @@ function StepReview({
             </div>
           )}
         </div>
+
+        {/* Info column */}
         <div>
-          <div className="text-xs uppercase tracking-widest text-text-muted">Design</div>
-          <div className="mt-1 font-semibold text-text-primary">{design.name}</div>
-          <Link
-            href={`/designer/${design.id}`}
-            className="mt-2 inline-block text-sm font-semibold text-orange hover:underline"
-          >
-            Edit design →
-          </Link>
+          <div className="text-xs uppercase tracking-widest text-text-muted">
+            {isInkjet ? "Product" : "Design"}
+          </div>
+          <div className="mt-1 font-semibold text-text-primary">
+            {isInkjet ? "Blank Inkjet cards" : design.name}
+          </div>
+          {!isInkjet && (
+            <Link
+              href={`/designer/${design.id}`}
+              className="mt-2 inline-block text-sm font-semibold text-orange hover:underline"
+            >
+              Edit design →
+            </Link>
+          )}
 
           <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <Spec label="Material" value={specs.material} />
-            <Spec label="Finish" value={specs.finish} />
-            <Spec label="Chip" value={specs.chip} />
-            <Spec label="Side" value={specs.side} />
+            {!isInkjet && (
+              <>
+                <Spec label="Material" value={specs.material} />
+                <Spec label="Finish" value={specs.finish} />
+                <Spec label="Chip" value={specs.chip} />
+                <Spec label="Side" value={specs.side} />
+              </>
+            )}
             <Spec label="Printer" value={specs.printer} />
             <Spec label="Quantity" value={`${specs.quantity} cards`} />
           </dl>

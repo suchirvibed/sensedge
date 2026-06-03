@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { calculatePrice } from "@/lib/pricing";
 import { nextOrderNumber } from "@/lib/order-number";
+import { sendOrderEmail } from "@/lib/resend";
 import type {
   Material,
   Finish,
@@ -230,6 +231,19 @@ export async function POST(req: Request) {
 
       return o;
     });
+
+    // Fire confirmation email (non-blocking — order creation already
+    // succeeded, the email failing should never roll that back).
+    try {
+      await sendOrderEmail({
+        to: session.user.email ?? "",
+        orderNumber: order.orderNumber,
+        status: "CONFIRMED",
+        customerName: session.user.name ?? "Customer",
+      });
+    } catch (mailErr) {
+      console.warn("Order confirmation email failed (non-fatal):", mailErr);
+    }
 
     return NextResponse.json({ order }, { status: 201 });
   } catch (err) {
