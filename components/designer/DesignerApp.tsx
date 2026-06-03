@@ -389,6 +389,17 @@ export function DesignerApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specs.side]);
 
+  // When switching from INKJET back to THERMAL, the canvas wrapper goes
+  // from invisible to visible. Defensively kick Fabric to re-render so
+  // the white background + objects are guaranteed to paint.
+  useEffect(() => {
+    if (specs.printer === "THERMAL" && canvas.ready) {
+      const id = window.setTimeout(() => canvas.requestRenderAll(), 0);
+      return () => window.clearTimeout(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specs.printer, canvas.ready]);
+
   // ─── Editor keyboard shortcuts ─────────────────────────
   // Delete / Backspace — remove
   // Arrow keys           — nudge 1px (Shift = 10px)
@@ -772,44 +783,63 @@ export function DesignerApp({
 
           {/* Canvas workspace */}
           <main className="relative flex flex-1 flex-col items-center justify-center bg-[radial-gradient(circle,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:18px_18px]">
-            {specs.printer === "INKJET" ? (
-              <InkjetBypassPanel
-                onSwitchToThermal={() =>
-                  setSpecs((s) => ({ ...s, printer: "THERMAL" }))
-                }
-                onContinue={handlePlaceOrder}
-                quantity={specs.quantity}
-                onQuantityChange={(q) =>
-                  setSpecs((s) => ({ ...s, quantity: q }))
-                }
-              />
-            ) : (
-              <>
-            <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
-              {doubleSided ? (
-                <SideToggle current={side} onChange={handleSetSide} />
-              ) : (
-                <div className="text-[10px] uppercase tracking-widest text-white/40">
-                  Single side · enable “Both sides” in card options for a back design
-                </div>
-              )}
-            </div>
-            <div className="absolute right-4 top-4 z-10">
-              <PrintValidationBadge
-                summary={summary}
-                currentSide={side}
-                onJumpToIssue={handleJumpToIssue}
-                onDeleteIssue={handleDeleteIssue}
-              />
-            </div>
+            {/* Inkjet bypass overlay — sits on top when Inkjet is selected */}
+            {specs.printer === "INKJET" && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-canvas">
+                <InkjetBypassPanel
+                  onSwitchToThermal={() =>
+                    setSpecs((s) => ({ ...s, printer: "THERMAL" }))
+                  }
+                  onContinue={handlePlaceOrder}
+                  quantity={specs.quantity}
+                  onQuantityChange={(q) =>
+                    setSpecs((s) => ({ ...s, quantity: q }))
+                  }
+                />
+              </div>
+            )}
 
-            <div className="mb-4 text-xs uppercase tracking-widest text-white/40">
-              Card {side === "FRONT" ? "front" : "back"} · {currentSize.w} × {currentSize.h} mm ·{" "}
-              {specs.orientation === "HORIZONTAL" ? "Landscape" : "Portrait"}
-            </div>
+            {/* Side toggle — hidden when Inkjet */}
+            {specs.printer !== "INKJET" && (
+              <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+                {doubleSided ? (
+                  <SideToggle current={side} onChange={handleSetSide} />
+                ) : (
+                  <div className="text-[10px] uppercase tracking-widest text-white/40">
+                    Single side · enable “Both sides” in card options for a back design
+                  </div>
+                )}
+              </div>
+            )}
 
+            {/* Validation badge — hidden when Inkjet */}
+            {specs.printer !== "INKJET" && (
+              <div className="absolute right-4 top-4 z-10">
+                <PrintValidationBadge
+                  summary={summary}
+                  currentSide={side}
+                  onJumpToIssue={handleJumpToIssue}
+                  onDeleteIssue={handleDeleteIssue}
+                />
+              </div>
+            )}
+
+            {/* Card label — hidden when Inkjet */}
+            {specs.printer !== "INKJET" && (
+              <div className="mb-4 text-xs uppercase tracking-widest text-white/40">
+                Card {side === "FRONT" ? "front" : "back"} · {currentSize.w} × {currentSize.h} mm ·{" "}
+                {specs.orientation === "HORIZONTAL" ? "Landscape" : "Portrait"}
+              </div>
+            )}
+
+            {/* Canvas wrapper — ALWAYS mounted so Fabric keeps its DOM
+                reference. CSS-hidden during Inkjet to avoid the remount
+                glitch that wipes the white background on switch-back. */}
             <div
-              className="relative overflow-hidden rounded-card shadow-[0_20px_60px_-15px_rgba(232,93,4,0.4)] ring-1 ring-orange/40"
+              className={cn(
+                "relative overflow-hidden rounded-card shadow-[0_20px_60px_-15px_rgba(232,93,4,0.4)] ring-1 ring-orange/40",
+                specs.printer === "INKJET" && "invisible pointer-events-none absolute"
+              )}
               style={{ width: canvasPx.w, height: canvasPx.h }}
             >
               <canvas ref={canvas.elRef} width={canvasPx.w} height={canvasPx.h} />
@@ -848,18 +878,19 @@ export function DesignerApp({
               )}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-white/30">
-              <span>
-                <Kbd>↑↓←→</Kbd> nudge · <Kbd>Shift</Kbd>+arrow = 10 px
-              </span>
-              <span>
-                <Kbd>Del</Kbd> remove · <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> duplicate
-              </span>
-              <span>
-                <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo
-              </span>
-            </div>
-              </>
+            {/* Keyboard hints — hidden when Inkjet */}
+            {specs.printer !== "INKJET" && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-white/30">
+                <span>
+                  <Kbd>↑↓←→</Kbd> nudge · <Kbd>Shift</Kbd>+arrow = 10 px
+                </span>
+                <span>
+                  <Kbd>Del</Kbd> remove · <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> duplicate
+                </span>
+                <span>
+                  <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo
+                </span>
+              </div>
             )}
           </main>
 

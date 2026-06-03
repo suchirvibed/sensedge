@@ -664,6 +664,14 @@ export function useFabricCanvas({
     return { w: fc.getWidth(), h: fc.getHeight() };
   }, []);
 
+  /** Force Fabric to redraw. Called after we un-hide the canvas wrapper
+   *  (Inkjet → Thermal toggle) just to be defensive. */
+  const requestRenderAll = useCallback(() => {
+    const fc = fcRef.current;
+    if (!fc) return;
+    fc.requestRenderAll();
+  }, []);
+
   return {
     elRef,
     ready,
@@ -695,5 +703,6 @@ export function useFabricCanvas({
     sendBackward,
     bringToFront,
     sendToBack,
+    requestRenderAll,
   };
 }
