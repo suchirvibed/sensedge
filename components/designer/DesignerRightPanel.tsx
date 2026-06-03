@@ -195,7 +195,9 @@ export function DesignerRightPanel({
               type="number"
               min={0}
               step={1}
-              value={specs.quantity}
+              // Show empty when 0 so backspacing the last digit doesn't
+              // leave a stuck "0" in the field.
+              value={specs.quantity ? specs.quantity : ""}
               onChange={(e) => {
                 const raw = e.target.value;
                 if (raw === "") return update("quantity", 0);

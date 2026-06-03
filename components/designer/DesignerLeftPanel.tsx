@@ -31,6 +31,9 @@ import {
 import type { ObjectSnapshot } from "./useFabricCanvas";
 
 interface Props {
+  /** When true, hide all design-only sections (Inkjet uses our stock template). */
+  isInkjet?: boolean;
+
   /** Printer compatibility radio */
   printer: PrinterKind;
   onPrinterChange: (p: PrinterKind) => void;
@@ -130,6 +133,7 @@ export function DesignerLeftPanel(props: Props) {
 
 // ─── Content tab ─────────────────────────────────────────
 function ContentTab({
+  isInkjet,
   printer,
   onPrinterChange,
   printSide,
@@ -195,6 +199,15 @@ function ContentTab({
         )}
       </Section>
 
+      {isInkjet && (
+        <div className="rounded-md border border-orange/30 bg-orange/10 p-3 text-[11px] leading-relaxed text-orange/90">
+          Inkjet uses our stock template — design tools are disabled. Choose
+          your quantity on the right and continue to checkout.
+        </div>
+      )}
+
+      {!isInkjet && (
+        <>
       {/* Card Type */}
       <Section title="Card Type">
         <RadioRow
@@ -313,6 +326,8 @@ function ContentTab({
         onSelect={onSelectField}
         onRemove={onRemoveField}
       />
+        </>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { IconDeviceDesktop } from "@tabler/icons-react";
+import { IconDeviceDesktop, IconPrinter, IconArrowRight } from "@tabler/icons-react";
 import { DesignerToolbar } from "./DesignerToolbar";
 import { DesignerLeftPanel } from "./DesignerLeftPanel";
 import { DesignerRightPanel } from "./DesignerRightPanel";
@@ -720,6 +720,7 @@ export function DesignerApp({
 
         <div className="flex flex-1 overflow-hidden">
           <DesignerLeftPanel
+            isInkjet={specs.printer === "INKJET"}
             printer={specs.printer}
             onPrinterChange={(printer) =>
               setSpecs((s) => ({ ...s, printer }))
@@ -757,6 +758,16 @@ export function DesignerApp({
 
           {/* Canvas workspace */}
           <main className="relative flex flex-1 flex-col items-center justify-center bg-[radial-gradient(circle,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:18px_18px]">
+            {specs.printer === "INKJET" ? (
+              <InkjetBypassPanel
+                onSwitchToThermal={() =>
+                  setSpecs((s) => ({ ...s, printer: "THERMAL" }))
+                }
+                onContinue={handlePlaceOrder}
+                quantity={specs.quantity}
+              />
+            ) : (
+              <>
             <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
               {doubleSided ? (
                 <SideToggle current={side} onChange={handleSetSide} />
@@ -831,6 +842,8 @@ export function DesignerApp({
                 <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> undo
               </span>
             </div>
+              </>
+            )}
           </main>
 
           <DesignerRightPanel
@@ -845,6 +858,77 @@ export function DesignerApp({
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Inkjet bypass panel ──────────────────────────────────
+// Shown in place of the canvas when the user picks Inkjet. They don't
+// design Inkjet cards — we print our stock template — so the flow is
+// just: choose specs on the right → continue to checkout.
+function InkjetBypassPanel({
+  onSwitchToThermal,
+  onContinue,
+  quantity,
+}: {
+  onSwitchToThermal: () => void;
+  onContinue: () => void;
+  quantity: number;
+}) {
+  const canCheckout = quantity >= 25;
+  return (
+    <div className="flex w-full max-w-md flex-col items-center px-6 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange/15 text-orange">
+        <IconPrinter size={28} strokeWidth={1.6} />
+      </div>
+      <h2 className="mt-6 font-display text-2xl font-bold tracking-tight text-white">
+        Inkjet cards use our stock template
+      </h2>
+      <p className="mt-3 text-sm leading-relaxed text-white/65">
+        Inkjet printing is best for fast turnaround at scale. We print
+        on our pre-designed template — no custom design needed. Pick
+        your material, finish and quantity on the right, then place the order.
+      </p>
+
+      <div className="mt-6 w-full rounded-md border border-white/10 bg-white/[0.03] p-4 text-left">
+        <div className="flex items-center justify-between text-xs">
+          <span className="uppercase tracking-widest text-white/45">
+            Current quantity
+          </span>
+          <span className="font-mono text-base font-semibold text-white">
+            {quantity > 0 ? `${quantity} cards` : "—"}
+          </span>
+        </div>
+        {!canCheckout && (
+          <p className="mt-2 text-[11px] leading-relaxed text-tint-redText">
+            Set a quantity of at least 25 on the right panel to continue.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-7 flex w-full flex-col gap-2">
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={!canCheckout}
+          className={cn(
+            "inline-flex h-11 w-full items-center justify-center gap-2 rounded-btn text-sm font-semibold transition",
+            canCheckout
+              ? "bg-orange text-white hover:bg-orange-dark"
+              : "cursor-not-allowed bg-white/5 text-white/30"
+          )}
+        >
+          Continue to checkout
+          <IconArrowRight size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={onSwitchToThermal}
+          className="inline-flex h-10 w-full items-center justify-center rounded-btn border border-white/10 text-xs font-medium text-white/70 transition hover:bg-white/5 hover:text-white"
+        >
+          Switch to Thermal to design custom cards
+        </button>
+      </div>
+    </div>
   );
 }
 
