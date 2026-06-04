@@ -13,7 +13,12 @@ export default async function DesignsPage() {
   const userId = session!.user.id;
 
   const designs = await prisma.design.findMany({
-    where: { userId },
+    where: {
+      userId,
+      // Hide the auto-created "[BLANK INKJET]" stub from the grid —
+      // it's an internal artefact, not something the user designed.
+      NOT: { name: "[BLANK INKJET]" },
+    },
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,

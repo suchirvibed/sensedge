@@ -484,8 +484,12 @@ export function DesignerApp({
   }, [canvas]);
 
   // ─── DB save (with retry) ──────────────────────────────
-  const saveToDb = useCallback(async (): Promise<{ ok: boolean; id?: string }> => {
-    if (!canvas.ready) return { ok: false };
+  const saveToDb = useCallback(async (): Promise<{
+    ok: boolean;
+    id?: string;
+    error?: string;
+  }> => {
+    if (!canvas.ready) return { ok: false, error: "Canvas isn't ready yet." };
     setSaveStatus("saving");
 
     const canvasJson = captureBothSides();
@@ -561,7 +565,12 @@ export function DesignerApp({
       console.error("DB save failed:", e);
       setSaveStatus("error");
       window.setTimeout(() => setSaveStatus("idle"), 2500);
-      return { ok: false };
+      const message = (e as Error).message ?? "Unknown error";
+      // Common case: dev DB isn't running. Make that diagnosable.
+      const friendlyHint = /5\d\d|Failed to fetch|fetch failed|reach database/i.test(message)
+        ? "\n\nServer may be down or the database isn't running. Make sure `docker compose up -d` is up."
+        : "";
+      return { ok: false, error: message + friendlyHint };
     }
   }, [canvas, captureBothSides, designName]);
 
@@ -570,10 +579,28 @@ export function DesignerApp({
   }, [saveToDb]);
 
   const handlePlaceOrder = useCallback(async () => {
+    // ── Inkjet path ──────────────────────────────────
+    // Inkjet cards are blank — there's nothing to save. Go straight to
+    // checkout. The /checkout page auto-creates (or reuses) a single
+    // "[BLANK INKJET]" design row per user so the order has something
+    // to FK to without forcing the user through a design save.
+    if (specs.printer === "INKJET") {
+      const sp = new URLSearchParams({
+        inkjet: "1",
+        quantity: String(specs.quantity),
+      });
+      router.push(`/checkout?${sp.toString()}`);
+      return;
+    }
+
+    // ── Thermal path ─────────────────────────────────
+    // Save the design so the order references a real Design row.
     const result = await saveToDb();
     if (!result.ok || !result.id) {
       alert(
-        "Couldn't save your design before checkout. Check the console for details and try again."
+        `Couldn't save your design before checkout.\n\n${
+          result.error ?? "Unknown error — open the browser console for details."
+        }`
       );
       return;
     }

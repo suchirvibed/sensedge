@@ -9,6 +9,7 @@ import {
   type PrintSide,
 } from "@/lib/pricing";
 import { CheckoutFlow } from "@/components/checkout/CheckoutFlow";
+import { getOrCreateBlankInkjetDesign } from "@/lib/blank-inkjet";
 
 interface SP {
   designId?: string;
@@ -18,6 +19,8 @@ interface SP {
   side?: string;
   printer?: string;
   quantity?: string;
+  /** "1" when arriving from the Inkjet bypass panel — no designId. */
+  inkjet?: string;
 }
 
 function parseEnum<T extends string>(
@@ -36,31 +39,54 @@ export default async function CheckoutPage({ searchParams }: { searchParams: SP 
   if (!session?.user?.id) {
     redirect("/login?from=/checkout");
   }
+  const userId = session.user.id;
 
-  const designId = searchParams.designId;
-  if (!designId) {
-    redirect("/dashboard/designs");
+  // Detect Inkjet routes (either via flag or via printer param).
+  const isInkjet =
+    searchParams.inkjet === "1" || searchParams.printer === "INKJET";
+
+  // ── Resolve the Design row ──
+  // Thermal: must have a real designId in the URL.
+  // Inkjet : auto-create/reuse a single "[BLANK INKJET]" design per user.
+  let designRow: { id: string; name: string; previewUrl: string | null };
+
+  if (isInkjet) {
+    const stub = await getOrCreateBlankInkjetDesign(userId);
+    designRow = { id: stub.id, name: "Blank Inkjet cards", previewUrl: null };
+  } else {
+    const designId = searchParams.designId;
+    if (!designId) redirect("/dashboard/designs");
+    const found = await prisma.design.findUnique({
+      where: { id: designId },
+      select: { id: true, userId: true, name: true, previewUrl: true },
+    });
+    if (!found || found.userId !== userId) redirect("/dashboard/designs");
+    designRow = {
+      id: found.id,
+      name: found.name,
+      previewUrl: found.previewUrl,
+    };
   }
 
-  const design = await prisma.design.findUnique({
-    where: { id: designId },
-    select: {
-      id: true,
-      userId: true,
-      name: true,
-      previewUrl: true,
-    },
-  });
-  if (!design || design.userId !== session.user.id) {
-    redirect("/dashboard/designs");
-  }
-
-  // Pull specs from query params with safe fallbacks.
-  const material = parseEnum<Material>(searchParams.material, ["PVC", "PAPER", "COMPOSITE"], "PVC");
-  const finish = parseEnum<Finish>(searchParams.finish, ["MATTE", "GLOSSY", "METALLIC"], "MATTE");
-  const chip = parseEnum<ChipType>(searchParams.chip, ["NONE", "RFID", "NFC", "LED"], "NONE");
-  const side = parseEnum<PrintSide>(searchParams.side, ["SINGLE", "DOUBLE"], "SINGLE");
-  const printer = parseEnum(searchParams.printer, ["THERMAL", "INKJET"] as const, "THERMAL");
+  // ── Specs ──
+  // For Inkjet we force material/finish/chip/side neutral. The pricing
+  // engine then returns a clean blank-PVC × qty figure that matches what
+  // the user saw in the Inkjet bypass panel.
+  const material: Material = isInkjet
+    ? "PVC"
+    : parseEnum<Material>(searchParams.material, ["PVC", "PAPER", "COMPOSITE"], "PVC");
+  const finish: Finish = isInkjet
+    ? "MATTE"
+    : parseEnum<Finish>(searchParams.finish, ["MATTE", "GLOSSY", "METALLIC"], "MATTE");
+  const chip: ChipType = isInkjet
+    ? "NONE"
+    : parseEnum<ChipType>(searchParams.chip, ["NONE", "RFID", "NFC", "LED"], "NONE");
+  const side: PrintSide = isInkjet
+    ? "SINGLE"
+    : parseEnum<PrintSide>(searchParams.side, ["SINGLE", "DOUBLE"], "SINGLE");
+  const printer = isInkjet
+    ? "INKJET"
+    : parseEnum(searchParams.printer, ["THERMAL", "INKJET"] as const, "THERMAL");
 
   let qty = parseInt(searchParams.quantity ?? "50", 10);
   if (!Number.isFinite(qty) || qty < 25) qty = 25;
@@ -75,7 +101,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: SP 
   });
 
   const addresses = await prisma.address.findMany({
-    where: { userId: session.user.id },
+    where: { userId },
     orderBy: [{ isDefault: "desc" }, { id: "desc" }],
   });
 
@@ -85,7 +111,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: SP 
         name: session.user.name ?? "",
         email: session.user.email ?? "",
       }}
-      design={{ id: design.id, name: design.name, previewUrl: design.previewUrl }}
+      design={designRow}
       specs={{ material, finish, chip, side, printer, quantity: qty }}
       price={price}
       addresses={addresses.map((a) => ({
