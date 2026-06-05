@@ -1,12 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/Badge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatINR } from "@/lib/pricing";
 import { OrderStatusTracker } from "@/components/orders/OrderStatusTracker";
-import { RetryPaymentButton } from "@/components/orders/RetryPaymentButton";
+import { OrderStatusOverride } from "@/components/admin/OrderStatusOverride";
 import {
   displayDesignName,
   isBlankInkjetDesignName,
@@ -14,69 +13,56 @@ import {
 
 interface Props {
   params: { id: string };
-  searchParams: { placed?: string };
 }
 
 export const dynamic = "force-dynamic";
 
-export default async function OrderDetailPage({ params, searchParams }: Props) {
-  const session = await auth();
-  if (!session?.user?.id) notFound();
-
+export default async function AdminOrderDetailPage({ params }: Props) {
   const order = await prisma.order.findUnique({
     where: { id: params.id },
     include: {
+      user: { select: { id: true, name: true, email: true } },
       design: { select: { id: true, name: true, previewUrl: true } },
       address: true,
       payment: true,
-      statusLogs: { orderBy: { createdAt: "desc" } },
+      statusLogs: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          // No relation on changedBy → just show id; for niceness we
+          // could fetch the User. Keeping simple for now.
+        },
+      },
     },
   });
-  if (!order || order.userId !== session.user.id) notFound();
+  if (!order) notFound();
 
-  const justPlaced = searchParams.placed === "1";
   const isInkjet =
     order.printerType === "INKJET" ||
     isBlankInkjetDesignName(order.design.name);
   const designLabel = displayDesignName(order.design.name);
 
-  // Show "Retry payment" only when method is Razorpay AND payment is PENDING
-  // AND the order isn't cancelled (no point retrying a cancelled order).
-  const showRetryPayment =
-    order.paymentMethod === "RAZORPAY" &&
-    order.paymentStatus === "PENDING" &&
-    order.status !== "CANCELLED" &&
-    order.status !== "REFUNDED";
-
   return (
-    <div className="mx-auto max-w-4xl">
-      {justPlaced && (
-        <div className="mb-6 rounded-card border border-tint-greenText/20 bg-tint-green/40 px-5 py-4">
-          <div className="font-display text-lg font-bold tracking-tight text-tint-greenText">
-            🎉 Order placed!
-          </div>
-          <div className="mt-1 text-sm text-text-body">
-            We&apos;ve emailed a confirmation to{" "}
-            <span className="font-semibold">{session.user.email}</span>. You can
-            track this order&apos;s status here at any time.
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto max-w-5xl">
+      <Link
+        href="/admin/orders"
+        className="text-xs font-semibold uppercase tracking-widest text-text-muted hover:text-orange"
+      >
+        ← All orders
+      </Link>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Link
-            href="/dashboard/orders"
-            className="text-xs font-semibold uppercase tracking-widest text-text-muted hover:text-orange"
-          >
-            ← Back to orders
-          </Link>
-          <h1 className="h2 mt-3 font-mono text-text-primary">{order.orderNumber}</h1>
+          <h1 className="h2 font-mono text-text-primary">{order.orderNumber}</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Placed on{" "}
-            {new Date(order.createdAt).toLocaleDateString("en-IN", {
+            Placed{" "}
+            {new Date(order.createdAt).toLocaleString("en-IN", {
               dateStyle: "long",
-            })}
+              timeStyle: "short",
+            })}{" "}
+            by{" "}
+            <span className="font-semibold text-text-primary">
+              {order.user.name}
+            </span>{" "}
+            ({order.user.email})
           </p>
         </div>
         <StatusBadge status={order.status} />
@@ -86,7 +72,16 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
         <OrderStatusTracker status={order.status} />
       </div>
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+      {/* Status override card */}
+      <div className="mt-8">
+        <OrderStatusOverride
+          orderId={order.id}
+          currentStatus={order.status}
+          currentPaymentStatus={order.paymentStatus}
+        />
+      </div>
+
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         {/* Left — design + specs */}
         <div className="rounded-card border border-border bg-white p-6">
           <div className="text-xs uppercase tracking-widest text-text-muted">
@@ -189,18 +184,9 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
                 {order.paymentStatus}
               </Badge>
             </div>
-            {showRetryPayment && (
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="mb-3 text-xs leading-relaxed text-text-muted">
-                  Your last attempt didn&rsquo;t complete. You can finish the
-                  payment here without re-entering anything.
-                </p>
-                <RetryPaymentButton
-                  orderId={order.id}
-                  orderNumber={order.orderNumber}
-                  customerName={session.user.name ?? ""}
-                  customerEmail={session.user.email ?? ""}
-                />
+            {order.payment?.razorpayPayId && (
+              <div className="mt-3 font-mono text-[10px] tracking-widest text-text-muted">
+                {order.payment.razorpayPayId}
               </div>
             )}
           </div>
@@ -214,7 +200,11 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
               <Row label="Subtotal" value={formatINR(order.subtotal)} />
               <Row
                 label="Shipping"
-                value={order.shippingPrice === 0 ? "Free" : formatINR(order.shippingPrice)}
+                value={
+                  order.shippingPrice === 0
+                    ? "Free"
+                    : formatINR(order.shippingPrice)
+                }
               />
             </dl>
             <div className="mt-4 flex items-baseline justify-between border-t border-border pt-4">
@@ -228,6 +218,43 @@ export default async function OrderDetailPage({ params, searchParams }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Activity log */}
+      <section className="mt-10">
+        <h2 className="mb-4 font-display text-lg font-bold text-text-primary">
+          Activity log
+        </h2>
+        {order.statusLogs.length === 0 ? (
+          <div className="rounded-card border border-dashed border-border bg-white px-6 py-8 text-center text-sm text-text-muted">
+            No status changes yet.
+          </div>
+        ) : (
+          <ol className="space-y-3">
+            {order.statusLogs.map((log) => (
+              <li
+                key={log.id}
+                className="rounded-card border border-border bg-white p-4"
+              >
+                <div className="flex items-baseline justify-between">
+                  <StatusBadge status={log.status} />
+                  <span className="text-xs text-text-muted">
+                    {new Date(log.createdAt).toLocaleString("en-IN", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                </div>
+                {log.notes && (
+                  <p className="mt-2 text-sm text-text-body">{log.notes}</p>
+                )}
+                <div className="mt-2 font-mono text-[10px] text-text-muted">
+                  by user {log.changedBy}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
     </div>
   );
 }

@@ -10,6 +10,19 @@ import { prisma } from "@/lib/prisma";
 
 export const BLANK_INKJET_NAME = "[BLANK INKJET]";
 
+/** Used everywhere a friendly label should appear in the UI. */
+export const BLANK_INKJET_DISPLAY_NAME = "Blank Inkjet cards";
+
+export function isBlankInkjetDesignName(name: string | null | undefined): boolean {
+  return name === BLANK_INKJET_NAME;
+}
+
+export function displayDesignName(name: string | null | undefined): string {
+  if (!name) return "Untitled design";
+  if (isBlankInkjetDesignName(name)) return BLANK_INKJET_DISPLAY_NAME;
+  return name;
+}
+
 export async function getOrCreateBlankInkjetDesign(
   userId: string
 ): Promise<{ id: string; name: string }> {
