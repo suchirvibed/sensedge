@@ -177,6 +177,11 @@ export async function POST(req: Request) {
   // ── Atomic create: order + payment + status log ──
   const orderNumber = await nextOrderNumber();
 
+  // Inkjet orders skip the graphics design-review step (the cards are
+  // blank — there's nothing to review). They jump straight to APPROVED
+  // and a PrintJob lands in the printer queue.
+  const skipReview = printerType === "INKJET";
+
   try {
     const order = await prisma.$transaction(async (tx) => {
       const o = await tx.order.create({
@@ -196,9 +201,9 @@ export async function POST(req: Request) {
           subtotal: price.subtotal,
           shippingPrice: price.shipping,
           totalPrice: price.total,
-          status: "CONFIRMED",
+          status: skipReview ? "APPROVED" : "CONFIRMED",
           paymentMethod,
-          paymentStatus: paymentMethod === "COD" ? "PENDING" : "PENDING",
+          paymentStatus: "PENDING",
         },
         select: { id: true, orderNumber: true },
       });
@@ -216,18 +221,33 @@ export async function POST(req: Request) {
       await tx.orderStatusLog.create({
         data: {
           orderId: o.id,
-          status: "CONFIRMED",
+          status: skipReview ? "APPROVED" : "CONFIRMED",
           changedBy: userId,
-          notes: "Order placed",
+          notes: skipReview
+            ? "Order placed — Inkjet skips review, sent directly to print"
+            : "Order placed",
         },
       });
 
-      // Promote design status from DRAFT → SUBMITTED so the graphics
-      // queue (eventually) can pick it up.
-      await tx.design.update({
-        where: { id: designId },
-        data: { status: "SUBMITTED" },
-      });
+      // For Thermal: promote design DRAFT → SUBMITTED so it shows up in
+      // the graphics review queue. For Inkjet: skip (design is the
+      // shared [BLANK INKJET] stub and is already APPROVED).
+      if (!skipReview) {
+        await tx.design.update({
+          where: { id: designId },
+          data: { status: "SUBMITTED" },
+        });
+      }
+
+      // Inkjet → queue a PrintJob immediately.
+      if (skipReview) {
+        await tx.printJob.create({
+          data: {
+            orderId: o.id,
+            status: "QUEUED",
+          },
+        });
+      }
 
       return o;
     });

@@ -25,13 +25,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
       design: { select: { id: true, name: true, previewUrl: true } },
       address: true,
       payment: true,
-      statusLogs: {
-        orderBy: { createdAt: "desc" },
-        include: {
-          // No relation on changedBy → just show id; for niceness we
-          // could fetch the User. Keeping simple for now.
-        },
-      },
+      printJob: { select: { id: true, status: true } },
+      statusLogs: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!order) notFound();
@@ -79,6 +74,26 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           currentStatus={order.status}
           currentPaymentStatus={order.paymentStatus}
         />
+      </div>
+
+      {/* Quick links to graphics + printer flows */}
+      <div className="mt-6 flex flex-wrap gap-3">
+        {!isInkjet && (
+          <Link
+            href={`/graphics/review/${order.id}`}
+            className="inline-flex h-10 items-center gap-2 rounded-btn border border-border bg-white px-4 text-sm font-semibold text-text-primary transition hover:border-text-primary hover:bg-bg-subtle"
+          >
+            Open in graphics review →
+          </Link>
+        )}
+        {order.printJob && (
+          <Link
+            href={`/printer/jobs/${order.printJob.id}`}
+            className="inline-flex h-10 items-center gap-2 rounded-btn border border-border bg-white px-4 text-sm font-semibold text-text-primary transition hover:border-text-primary hover:bg-bg-subtle"
+          >
+            Open print job ({order.printJob.status}) →
+          </Link>
+        )}
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
