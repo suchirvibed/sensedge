@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { IconLayoutGrid, IconPlus } from "@tabler/icons-react";
 import { TEMPLATE_CATEGORIES, type TemplateCategory } from "@/lib/template-categories";
+import { SeedTemplatesButton } from "@/components/graphics/SeedTemplatesButton";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Templates — Graphics" };
@@ -60,12 +61,15 @@ export default async function GraphicsTemplatesPage({
             designer&apos;s Templates tab.
           </p>
         </div>
-        <Link
-          href="/graphics/templates/new"
-          className="inline-flex h-11 items-center gap-2 rounded-btn bg-orange px-5 text-sm font-semibold text-white transition hover:bg-orange-dark"
-        >
-          <IconPlus size={16} /> New template
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <SeedTemplatesButton />
+          <Link
+            href="/graphics/templates/new"
+            className="inline-flex h-11 items-center gap-2 rounded-btn bg-orange px-5 text-sm font-semibold text-white transition hover:bg-orange-dark"
+          >
+            <IconPlus size={16} /> New template
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

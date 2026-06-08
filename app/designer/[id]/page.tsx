@@ -7,12 +7,38 @@ export const dynamic = "force-dynamic";
 
 interface Props {
   params: { id: string };
+  searchParams: { template?: string };
 }
 
-export default async function DesignerPage({ params }: Props) {
+export default async function DesignerPage({ params, searchParams }: Props) {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login?from=/designer/" + params.id);
+    const from = `/designer/${params.id}${
+      searchParams.template ? `?template=${searchParams.template}` : ""
+    }`;
+    redirect(`/login?from=${encodeURIComponent(from)}`);
+  }
+
+  // ── Template deep-link (only meaningful on a fresh canvas) ──
+  // The public /templates page links here as /designer/new?template={id}.
+  // We resolve the template, pull its canvasJson + name, and treat them
+  // as the initial state.
+  if (params.id === "new" && searchParams.template) {
+    const template = await prisma.template.findUnique({
+      where: { id: searchParams.template },
+      select: { id: true, name: true, canvasJson: true, isPublic: true },
+    });
+    if (template && template.isPublic) {
+      return (
+        <DesignerApp
+          designId="new"
+          userName={session.user.name}
+          initialName={template.name}
+          initialCanvas={template.canvasJson as object}
+        />
+      );
+    }
+    // Bad / private template id — fall through to blank canvas silently.
   }
 
   // "new" = fresh canvas, not persisted yet. First save creates the row.
