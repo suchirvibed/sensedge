@@ -806,6 +806,16 @@ export function DesignerApp({
             fields={fields}
             onSelectField={canvas.selectByIndex}
             onRemoveField={canvas.removeByIndex}
+            canvasHasContent={fields.length > 0}
+            onPickTemplate={(canvasJson, name) => {
+              // Replace the current side's content with the template's
+              // canvas JSON. Then update the design name if it's still the
+              // generic default — saves the user a click.
+              canvas.loadFromJSON(canvasJson);
+              if (designName === "Untitled design") {
+                setDesignName(name);
+              }
+            }}
           />
 
           {/* Canvas workspace */}

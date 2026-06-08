@@ -6,7 +6,6 @@ import {
   IconTypography,
   IconPhoto,
   IconQrcode,
-  IconLayoutBoard,
   IconArrowBackUp,
   IconArrowForwardUp,
   IconDeviceFloppy,
@@ -29,6 +28,7 @@ import {
   type CardSide,
 } from "./types";
 import type { ObjectSnapshot } from "./useFabricCanvas";
+import { DesignerTemplatePicker } from "./DesignerTemplatePicker";
 
 interface Props {
   /** When true, hide all design-only sections (Inkjet uses our stock template). */
@@ -74,6 +74,10 @@ interface Props {
   fields: ObjectSnapshot[];
   onSelectField: (index: number) => void;
   onRemoveField: (index: number) => void;
+
+  /** Templates tab — load a template's canvasJson into the current side. */
+  onPickTemplate: (canvasJson: object, name: string) => void;
+  canvasHasContent: boolean;
 }
 
 type Tab = "content" | "templates";
@@ -124,7 +128,10 @@ export function DesignerLeftPanel(props: Props) {
             fileRef={fileRef}
           />
         ) : (
-          <TemplatesTab />
+          <DesignerTemplatePicker
+            onPickTemplate={props.onPickTemplate}
+            canvasHasContent={props.canvasHasContent}
+          />
         )}
       </div>
     </aside>
@@ -328,22 +335,6 @@ function ContentTab({
       />
         </>
       )}
-    </div>
-  );
-}
-
-// ─── Templates tab ───────────────────────────────────────
-function TemplatesTab() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center p-5 text-center text-white/50">
-      <IconLayoutBoard size={40} strokeWidth={1.2} className="text-white/30" />
-      <div className="mt-4 text-sm font-semibold text-white/70">
-        Templates coming soon
-      </div>
-      <p className="mt-1 text-xs">
-        We&rsquo;re curating a library of professional templates. For now,
-        design from scratch or load a card-type default.
-      </p>
     </div>
   );
 }
